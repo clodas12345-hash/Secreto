@@ -1,0 +1,68 @@
+--- src/components/Vault.tsx
++++ src/components/Vault.tsx
+@@ -357,8 +357,15 @@
+     if (liveVideoRef.current) {
+       const canvas = document.createElement('canvas');
+       const video = liveVideoRef.current;
+-      canvas.width = video.videoWidth;
+-      canvas.height = video.videoHeight;
++      
++      const MAX_WIDTH = 600;
++      let width = video.videoWidth;
++      let height = video.videoHeight;
++      if (width > MAX_WIDTH) {
++        height = Math.round((height * MAX_WIDTH) / width);
++        width = MAX_WIDTH;
++      }
++      canvas.width = width;
++      canvas.height = height;
+       const ctx = canvas.getContext('2d');
+       if (ctx) {
+         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
++        const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+         if (isEditingCamera) {
+@@ -392,6 +399,11 @@
+     const isImage = file.type.startsWith('image/') || !!file.name.match(/\.(jpg|jpeg|png|gif|heic|heif|webp)$/i);
+     const fileType = isImage ? 'image' : (file.type === 'application/pdf' || !!file.name.match(/\.pdf$/i)) ? 'pdf' : 'other';
+     
++    if (!isImage && file.size > 500 * 1024) {
++      alert("Atenção: O arquivo excede o limite máximo (500KB) para armazenamento seguro no banco de dados.");
++      return;
++    }
++
+     if (fileType === 'image') {
+       const reader = new FileReader();
+@@ -401,9 +413,9 @@
+         img.onload = () => {
+           const canvas = document.createElement('canvas');
+           const ctx = canvas.getContext('2d');
+-          const MAX_WIDTH = 1024;
++          const MAX_WIDTH = 600;
+           let width = img.width;
+           let height = img.height;
+ 
+           if (width > MAX_WIDTH) {
+             height = Math.round((height * MAX_WIDTH) / width);
+             width = MAX_WIDTH;
+           }
+@@ -414,7 +426,7 @@
+           canvas.height = height;
+           ctx?.drawImage(img, 0, 0, width, height);
+           
+-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
++          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.5);
+           if (isEditing) {
+             setEditItemFile(compressedBase64);
+             setEditItemFileType('image');
+@@ -425,7 +437,11 @@
+         };
+ 
+         img.onerror = () => {
+-          // Fallback in case canvas resizing fails (e.g. unsupported HEIC on some browsers)
++          if (base64.length > 700000) {
++             alert("A imagem não pôde ser comprimida e excede o limite de segurança. Escolha uma imagem menor.");
++             return;
++          }
+           if (isEditing) {
+             setEditItemFile(base64);

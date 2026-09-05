@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cofre Secreto Web - PWA APK Ready</title>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <div id="app-container">
+    <!-- Tela de Autenticação / Login -->
+    <div id="auth-screen" class="screen active">
+      <div class="auth-card">
+        <div class="logo-icon"><i class="fa-solid fa-shield-halved"></i></div>
+        <h1>Cofre Secreto</h1>
+        <p class="subtitle">Segurança Avançada com Biometria e AES-GCM (Offline PWA)</p>
+
+        <div id="error-banner" class="error-banner hidden">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          <span id="error-message">Erro</span>
+        </div>
+
+        <!-- Etapa 1 -->
+        <div id="step-1" class="auth-step active">
+          <form id="login-form">
+            <div class="input-group">
+              <label><i class="fa-solid fa-envelope"></i> E-mail</label>
+              <input type="email" id="email-input" placeholder="seu@email.com" required value="admin@cofre.com">
+            </div>
+            <div class="input-group">
+              <label><i class="fa-solid fa-key"></i> Senha Inicial</label>
+              <input type="password" id="initial-password" placeholder="••••••••••••" required value="minhasenhasecreta123">
+            </div>
+            <button type="submit" class="btn-primary">
+              <i class="fa-solid fa-fingerprint"></i> Avançar & Autenticar Biometria
+            </button>
+          </form>
+        </div>
+
+        <!-- Etapa 2: Biometria -->
+        <div id="step-biometric" class="auth-step">
+          <div class="biometric-animation"><i class="fa-solid fa-fingerprint fa-bounce"></i></div>
+          <h3>Verificando Biometria</h3>
+          <p>Confirme sua impressão digital ou PIN no sensor do aparelho...</p>
+          <button type="button" class="btn-secondary" id="back-to-step1">Voltar</button>
+        </div>
+
+        <!-- Etapa 3: Senha Mestra do App -->
+        <div id="step-master" class="auth-step">
+          <div class="master-icon" style="font-size: 32px; color: #2563eb; margin-bottom: 12px;">
+            <i class="fa-solid fa-lock-open"></i>
+          </div>
+          <h3>Confirme a Senha Mestra</h3>
+          <p style="font-size: 13px; color: #9ca3af; margin-bottom: 16px;">Biometria aprovada. Digite sua senha mestra para descriptografar:</p>
+          <form id="master-form">
+            <div class="input-group">
+              <input type="password" id="master-password-input" placeholder="Senha Mestra do Cofre" required value="minhasenhasecreta123">
+            </div>
+            <button type="submit" class="btn-primary">
+              <i class="fa-solid fa-unlock"></i> Desbloquear Cofre
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Painel do Cofre -->
+    <div id="vault-screen" class="screen">
+      <header class="vault-header">
+        <div class="header-title">
+          <i class="fa-solid fa-vault"></i>
+          <h2>Meu Cofre Seguro</h2>
+        </div>
+        <button id="logout-btn" class="btn-icon" title="Bloquear Cofre"><i class="fa-solid fa-lock"></i></button>
+      </header>
+
+      <div class="vault-actions">
+        <div class="search-box">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" id="search-input" placeholder="Buscar credenciais...">
+        </div>
+        <button id="open-add-modal" class="btn-accent"><i class="fa-solid fa-plus"></i> Nova Senha</button>
+      </div>
+
+      <div id="vault-list" class="vault-list"></div>
+    </div>
+
+    <!-- Modal Adicionar -->
+    <div id="modal-add" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Adicionar Credencial</h3>
+          <button id="close-modal" class="btn-close"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form id="add-credential-form">
+          <div class="input-group">
+            <label>Título</label>
+            <input type="text" id="service-title" placeholder="Ex: Banco, Gmail" required>
+          </div>
+          <div class="input-group">
+            <label>Usuário</label>
+            <input type="text" id="service-user" placeholder="usuario@email.com" required>
+          </div>
+          <div class="input-group">
+            <label>Senha</label>
+            <div class="password-row">
+              <input type="text" id="service-pass" placeholder="Senha" required>
+              <button type="button" id="generate-pass" class="btn-small">Gerar</button>
+            </div>
+          </div>
+          <button type="submit" class="btn-primary">Salvar no Cofre Criptografado</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

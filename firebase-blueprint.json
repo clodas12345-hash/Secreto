@@ -1,0 +1,47 @@
+{
+  "schema": {
+    "users": {
+      "type": "collection",
+      "description": "User profiles and top-level user data.",
+      "fields": {
+        "email": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "subcollections": {
+        "passwords": {
+          "type": "collection",
+          "description": "User's saved passwords.",
+          "fields": {
+            "title": { "type": "string" },
+            "username": { "type": "string" },
+            "accessPassword": { "type": "string" },
+            "transactionPassword": { "type": "string" },
+            "folderId": { "type": "string", "optional": true },
+            "createdAt": { "type": "timestamp" }
+          }
+        },
+        "documents": {
+          "type": "collection",
+          "description": "User's saved documents and notes.",
+          "fields": {
+            "title": { "type": "string" },
+            "content": { "type": "string" },
+            "fileData": { "type": "string", "optional": true },
+            "fileType": { "type": "string", "optional": true },
+            "folderId": { "type": "string", "optional": true },
+            "createdAt": { "type": "timestamp" }
+          }
+        },
+        "folders": {
+          "type": "collection",
+          "description": "User's folders for organizing items.",
+          "fields": {
+            "name": { "type": "string" },
+            "type": { "type": "string" },
+            "createdAt": { "type": "timestamp" }
+          }
+        }
+      }
+    }
+  }
+}

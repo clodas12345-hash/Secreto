@@ -1,0 +1,27 @@
+--- src/App.tsx
++++ src/App.tsx
+@@ -23,9 +23,17 @@
+   }, []);
+ 
+   useEffect(() => {
++    let timeoutId: NodeJS.Timeout;
++    
+     const handleVisibilityChange = () => {
+       if (document.visibilityState === 'hidden') {
+-        setAuthState('unauthenticated');
++        timeoutId = setTimeout(() => {
++          setAuthState('unauthenticated');
++        }, 60000);
++      } else {
++        if (timeoutId) {
++          clearTimeout(timeoutId);
++        }
+       }
+     };
+ 
+     document.addEventListener('visibilitychange', handleVisibilityChange);
+     return () => {
+       document.removeEventListener('visibilitychange', handleVisibilityChange);
++      if (timeoutId) clearTimeout(timeoutId);
+     };
+   }, []);

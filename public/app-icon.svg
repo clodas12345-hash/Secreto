@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- White Background -->
+  <rect width="1024" height="1024" fill="#FFFFFF" />
+
+  <!-- PADLOCK (GOLDEN ORANGE) -->
+  <g id="padlock" transform="translate(0, 0)">
+    <!-- Shackle (Alça do Cadeado) -->
+    <path d="M 395 240 C 395 160 445 105 512 105 C 579 105 629 160 629 240 L 629 265 L 591 265 L 591 240 C 591 182 555 143 512 143 C 469 143 433 182 433 240 L 433 265 L 395 265 Z" fill="#FFA300"/>
+    
+    <!-- Shackle Solid Fill based on image -->
+    <path d="M 405 250 C 405 155 450 100 512 100 C 574 100 619 155 619 250 L 619 270 L 581 270 L 581 250 C 581 178 550 138 512 138 C 474 138 443 178 443 250 L 443 270 L 405 270 Z" fill="#FFA300" />
+    
+    <!-- Padlock Body -->
+    <rect x="345" y="250" width="334" height="280" rx="42" ry="42" fill="#FFA300" />
+    
+    <!-- Keyhole -->
+    <!-- Circle -->
+    <circle cx="512" cy="360" r="42" fill="#FFFFFF" />
+    <!-- Slot -->
+    <path d="M 492 375 L 532 375 L 544 465 C 544 478 532 488 512 488 C 492 488 480 478 480 465 Z" fill="#FFFFFF" />
+  </g>
+
+  <!-- GKD LOGO TYPOGRAPHY -->
+  <g id="gkd_letters" fill="#0A1E42">
+    <!-- LETTER G -->
+    <path d="M 335 572 L 358 632 C 322 610 278 610 248 624 C 205 644 175 684 170 735 C 163 798 202 850 268 850 C 315 850 348 830 368 805 L 368 765 L 290 765 L 290 710 L 420 710 L 420 840 C 378 885 318 905 250 905 C 145 905 85 832 95 730 C 105 632 178 565 292 565 C 308 565 322 568 335 572 Z" />
+
+    <!-- LETTER K -->
+    <!-- Left Vertical Stem of K (Angled italic) -->
+    <path d="M 465 570 L 522 570 L 452 900 L 395 900 Z" />
+    
+    <!-- Top-Right Cyan Arrow/Swoosh of K -->
+    <path d="M 500 705 L 635 570 L 690 570 L 548 712 Z" fill="#0084FF" />
+    
+    <!-- Bottom-Right Dark Navy Road Leg of K with Highway curve -->
+    <path d="M 495 725 L 638 900 L 575 900 L 455 765 Z" />
+    
+    <!-- Road Perspective Curve overlay -->
+    <path d="M 585 645 C 510 680 410 740 325 805 L 438 805 C 495 760 558 715 620 675 Z" fill="#0A1E42" />
+    <!-- Highway White Dashed Line -->
+    <polygon points="405,785 422,785 410,795 395,795" fill="#FFFFFF" />
+    <polygon points="450,750 464,750 448,762 436,762" fill="#FFFFFF" />
+    <polygon points="492,718 504,718 488,728 478,728" fill="#FFFFFF" />
+
+    <!-- LETTER D -->
+    <path d="M 648 570 L 780 570 C 885 570 945 635 925 735 C 905 835 830 900 720 900 L 588 900 Z M 675 628 L 632 842 L 715 842 C 788 842 838 798 850 735 C 862 672 825 628 752 628 Z" />
+  </g>
+
+  <!-- BOTTOM TEXT: — M O B I L I T Y — -->
+  <g id="mobility_subtext">
+    <line x1="88" y1="960" x2="175" y2="960" stroke="#0A1E42" stroke-width="7" stroke-linecap="round" />
+    <text x="512" y="976" font-family="'Arial Black', 'Impact', sans-serif" font-weight="900" font-style="italic" font-size="52" letter-spacing="18" fill="#0A1E42" text-anchor="middle">MOBILITY</text>
+    <line x1="849" y1="960" x2="936" y2="960" stroke="#0A1E42" stroke-width="7" stroke-linecap="round" />
+  </g>
+</svg>

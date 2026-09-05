@@ -1,0 +1,268 @@
+/* GKD Secreto - Estilos Injetados nos Sites para Preenchimento Automático */
+
+.gkd-autofill-badge {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  background: #09090b;
+  border: 1px solid #3b82f6;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 999999;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  transition: all 0.2s ease;
+}
+
+.gkd-autofill-badge:hover {
+  transform: translateY(-50%) scale(1.1);
+  background: #1e3a8a;
+  border-color: #60a5fa;
+}
+
+/* Dropdown Card */
+.gkd-dropdown-card {
+  position: absolute;
+  width: 270px;
+  background: #09090b;
+  border: 1px solid #27272a;
+  border-radius: 14px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.8), 0 8px 10px -6px rgba(0, 0, 0, 0.7);
+  z-index: 9999999;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #f4f4f5;
+  overflow: hidden;
+  animation: gkdFadeIn 0.15s ease-out;
+}
+
+.gkd-dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #18181b;
+  border-bottom: 1px solid #27272a;
+}
+
+.gkd-dropdown-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #3b82f6;
+  text-transform: uppercase;
+}
+
+.gkd-close-btn {
+  background: none;
+  border: none;
+  color: #71717a;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.gkd-close-btn:hover { color: #f4f4f5; }
+
+.gkd-dropdown-list {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.gkd-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.gkd-dropdown-item:hover {
+  background: #18181b;
+}
+
+.gkd-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.gkd-item-user {
+  font-weight: 700;
+  font-size: 12px;
+  color: #f4f4f5;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.gkd-item-meta {
+  font-size: 10px;
+  color: #71717a;
+}
+
+.gkd-fill-tag {
+  background: #2563eb;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.gkd-dropdown-empty {
+  padding: 16px 12px;
+  text-align: center;
+  font-size: 11px;
+  color: #71717a;
+}
+
+.gkd-dropdown-footer {
+  padding: 8px 10px;
+  border-top: 1px solid #27272a;
+  background: #121215;
+}
+
+.gkd-btn-action {
+  width: 100%;
+  padding: 6px;
+  background: #27272a;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  color: #e4e4e7;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.gkd-btn-action:hover {
+  background: #3b82f6;
+  border-color: #60a5fa;
+  color: white;
+}
+
+/* Prompt Card Flutuante de Salvamento de Senha */
+.gkd-prompt-card {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 320px;
+  background: #09090b;
+  border: 1px solid #3b82f6;
+  border-radius: 16px;
+  box-shadow: 0 20px 30px -10px rgba(0, 0, 0, 0.9), 0 0 20px rgba(59, 130, 246, 0.2);
+  z-index: 99999999;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #f4f4f5;
+  padding: 16px;
+  animation: gkdSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gkd-prompt-header {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.gkd-prompt-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.gkd-prompt-text strong {
+  display: block;
+  font-size: 13px;
+  color: #fafafa;
+  margin-bottom: 2px;
+}
+
+.gkd-prompt-text span {
+  font-size: 11px;
+  color: #a1a1aa;
+  line-height: 1.4;
+}
+
+.gkd-prompt-details {
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: #d4d4d8;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gkd-prompt-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.gkd-btn-dismiss {
+  flex: 1;
+  background: #27272a;
+  color: #a1a1aa;
+  border: none;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.gkd-btn-dismiss:hover { background: #3f3f46; color: #fff; }
+
+.gkd-btn-confirm {
+  flex: 1;
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+}
+
+.gkd-btn-confirm:hover { background: #1d4ed8; }
+
+.gkd-prompt-saved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #10b981;
+  padding: 8px 0;
+}
+
+@keyframes gkdFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes gkdSlideIn {
+  from { opacity: 0; transform: translateX(30px); }
+  to { opacity: 1; transform: translateX(0); }
+}

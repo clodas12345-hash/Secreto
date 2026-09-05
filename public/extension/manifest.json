@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "GKD Secreto - Leitor & Preenchimento de Senhas",
+  "version": "1.0.0",
+  "description": "Preenchimento automático e captura inteligente de credenciais em sites e formulários para o cofre GKD Secreto.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs",
+    "contextMenus",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "GKD Secreto - Cofre e Senhas",
+    "default_icon": {
+      "16": "icon.svg",
+      "48": "icon.svg",
+      "128": "icon.svg"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icon.svg", "styles.css"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

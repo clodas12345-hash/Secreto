@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Secreto - Acesso Restrito</title>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#000000">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+  <div id="app-container">
+    <!-- Tela de Acesso Restrito / Biometria (Página Inicial) -->
+    <div id="login-screen" class="screen active">
+      <div class="restricted-header">
+        <div class="lock-box">
+          <i class="fa-solid fa-lock"></i>
+        </div>
+        <h1>ACESSO RESTRITO</h1>
+        <p>CADASTRO DE BIOMETRIA</p>
+      </div>
+
+      <div class="biometric-card" id="btn-register-bio" title="Clique para cadastrar biometria">
+        <div class="bio-icon-wrapper">
+          <i class="fa-solid fa-fingerprint"></i>
+        </div>
+        <span>Cadastrar Biometria</span>
+      </div>
+
+      <div class="bottom-action">
+        <button id="btn-open-pin" class="btn-pin">
+          <i class="fa-solid fa-key"></i> Entrar com Senha PIN
+        </button>
+      </div>
+    </div>
+
+    <!-- Modal PIN (Entrada com Senha PIN: 12345) -->
+    <div id="modal-pin" class="modal hidden">
+      <div class="modal-content dark-modal">
+        <div class="modal-header">
+          <h3>Entrar com PIN</h3>
+          <button id="close-pin-modal" class="btn-close"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form id="pin-form">
+          <div class="input-group">
+            <label>Digite sua senha PIN</label>
+            <input type="password" id="pin-input" placeholder="Digite o PIN (ex: 12345)" required autofocus>
+          </div>
+          <div id="pin-error" class="error-msg hidden">PIN incorreto. Use 12345.</div>
+          <button type="submit" class="btn-primary">Desbloquear Cofre</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Tela do Cofre de Senhas (Painel Principal) -->
+    <div id="vault-screen" class="screen hidden">
+      <header class="vault-header">
+        <div class="header-title">
+          <div class="title-left">
+            <i class="fa-solid fa-vault"></i>
+            <h2>Secreto</h2>
+          </div>
+          <button id="btn-logout" class="btn-logout" title="Bloquear"><i class="fa-solid fa-lock"></i></button>
+        </div>
+        <div class="header-subtitle">Cofre Local • Acesso Autorizado</div>
+      </header>
+
+      <div class="vault-actions">
+        <div class="search-box">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" id="search-input" placeholder="Buscar credenciais...">
+        </div>
+        <button id="open-add-modal" class="btn-accent">
+          <i class="fa-solid fa-plus"></i> Nova Senha
+        </button>
+      </div>
+
+      <div id="vault-list" class="vault-list"></div>
+    </div>
+
+    <!-- Modal Adicionar/Editar Credencial -->
+    <div id="modal-add" class="modal hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modal-title">Nova Credencial</h3>
+          <button id="close-modal" class="btn-close"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form id="add-credential-form">
+          <input type="hidden" id="item-id">
+          <div class="input-group">
+            <label>Título / Serviço</label>
+            <input type="text" id="service-title" placeholder="Ex: Banco, Gmail, Instagram" required>
+          </div>
+          <div class="input-group">
+            <label>Usuário / E-mail</label>
+            <input type="text" id="service-user" placeholder="usuario@email.com" required>
+          </div>
+          <div class="input-group">
+            <label>Senha</label>
+            <div class="password-row">
+              <input type="text" id="service-pass" placeholder="Senha" required>
+              <button type="button" id="generate-pass" class="btn-small" title="Gerar Senha Forte">Gerar</button>
+            </div>
+          </div>
+          <button type="submit" class="btn-primary">Salvar Credencial</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

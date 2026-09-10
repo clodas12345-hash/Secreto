@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Secreto - Acesso Restrito</title>
+  <title>Secreto - Cofre de Senhas</title>
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#000000">
   <link rel="stylesheet" href="./style.css">
@@ -11,59 +11,17 @@
 </head>
 <body>
   <div id="app-container">
-    <!-- Tela de Acesso Restrito / Biometria (Página Inicial) -->
-    <div id="login-screen" class="screen active">
-      <div class="restricted-header">
-        <div class="lock-box">
-          <i class="fa-solid fa-lock"></i>
-        </div>
-        <h1>ACESSO RESTRITO</h1>
-        <p>CADASTRO DE BIOMETRIA</p>
-      </div>
-
-      <div class="biometric-card" id="btn-register-bio" title="Clique para cadastrar biometria">
-        <div class="bio-icon-wrapper">
-          <i class="fa-solid fa-fingerprint"></i>
-        </div>
-        <span>Cadastrar Biometria</span>
-      </div>
-
-      <div class="bottom-action">
-        <button id="btn-open-pin" class="btn-pin">
-          <i class="fa-solid fa-key"></i> Entrar com Senha PIN
-        </button>
-      </div>
-    </div>
-
-    <!-- Modal PIN (Entrada com Senha PIN: 12345) -->
-    <div id="modal-pin" class="modal hidden">
-      <div class="modal-content dark-modal">
-        <div class="modal-header">
-          <h3>Entrar com PIN</h3>
-          <button id="close-pin-modal" class="btn-close"><i class="fa-solid fa-xmark"></i></button>
-        </div>
-        <form id="pin-form">
-          <div class="input-group">
-            <label>Digite sua senha PIN</label>
-            <input type="password" id="pin-input" placeholder="Digite o PIN (ex: 12345)" required autofocus>
-          </div>
-          <div id="pin-error" class="error-msg hidden">PIN incorreto. Use 12345.</div>
-          <button type="submit" class="btn-primary">Desbloquear Cofre</button>
-        </form>
-      </div>
-    </div>
-
-    <!-- Tela do Cofre de Senhas (Painel Principal) -->
-    <div id="vault-screen" class="screen hidden">
+    <!-- Tela do Cofre de Senhas (Painel Principal - Acesso Público Direto) -->
+    <div id="vault-screen" class="screen active">
       <header class="vault-header">
         <div class="header-title">
           <div class="title-left">
             <i class="fa-solid fa-vault"></i>
             <h2>Secreto</h2>
           </div>
-          <button id="btn-logout" class="btn-logout" title="Bloquear"><i class="fa-solid fa-lock"></i></button>
+          <div class="header-badge">Acesso Público</div>
         </div>
-        <div class="header-subtitle">Cofre Local • Acesso Autorizado</div>
+        <div class="header-subtitle">Cofre Local • Sem Autenticação</div>
       </header>
 
       <div class="vault-actions">

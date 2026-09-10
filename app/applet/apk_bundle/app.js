@@ -1,5 +1,5 @@
 /**
- * Secreto - Cofre de Senhas com Acesso Restrito (Biometria / PIN: 12345)
+ * Secreto - Cofre de Senhas (Acesso Público Total - Sem Autenticação)
  * Armazenamento em IndexedDB (Texto Limpo)
  */
 
@@ -10,17 +10,7 @@ const DB_VERSION = 1;
 let cachedVaultItems = [];
 
 // DOM Elements
-const loginScreen = document.getElementById("login-screen");
 const vaultScreen = document.getElementById("vault-screen");
-const btnRegisterBio = document.getElementById("btn-register-bio");
-const btnOpenPin = document.getElementById("btn-open-pin");
-const modalPin = document.getElementById("modal-pin");
-const closePinModalBtn = document.getElementById("close-pin-modal");
-const pinForm = document.getElementById("pin-form");
-const pinInput = document.getElementById("pin-input");
-const pinError = document.getElementById("pin-error");
-const btnLogout = document.getElementById("btn-logout");
-
 const vaultList = document.getElementById("vault-list");
 const searchInput = document.getElementById("search-input");
 const modalAdd = document.getElementById("modal-add");
@@ -84,70 +74,17 @@ async function saveVaultItems(items) {
 }
 
 // -------------------------------------------------------------
-// Authentication & UI Logic
+// Initialization
 // -------------------------------------------------------------
 window.addEventListener("DOMContentLoaded", async () => {
-  const isLoggedIn = sessionStorage.getItem("secreto_auth") === "true";
-  if (isLoggedIn) {
-    showVaultScreen();
-  }
-
   try {
     cachedVaultItems = await loadVaultItems();
   } catch (err) {
     console.error("Erro ao carregar cofre:", err);
     cachedVaultItems = [];
   }
-});
-
-btnRegisterBio.addEventListener("click", () => {
-  showToast("Biometria reconhecida com sucesso!");
-  setTimeout(() => {
-    sessionStorage.setItem("secreto_auth", "true");
-    showVaultScreen();
-  }, 600);
-});
-
-btnOpenPin.addEventListener("click", () => {
-  pinError.classList.add("hidden");
-  pinInput.value = "";
-  modalPin.classList.remove("hidden");
-  pinInput.focus();
-});
-
-closePinModalBtn.addEventListener("click", () => {
-  modalPin.classList.add("hidden");
-});
-
-pinForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const pin = pinInput.value.trim();
-  if (pin === "12345") {
-    pinError.classList.add("hidden");
-    modalPin.classList.add("hidden");
-    sessionStorage.setItem("secreto_auth", "true");
-    showVaultScreen();
-    pinForm.reset();
-  } else {
-    pinError.classList.remove("hidden");
-  }
-});
-
-btnLogout.addEventListener("click", () => {
-  sessionStorage.removeItem("secreto_auth");
-  vaultScreen.classList.add("hidden");
-  loginScreen.classList.remove("hidden");
-  loginScreen.style.display = "flex";
-  vaultScreen.style.display = "none";
-});
-
-function showVaultScreen() {
-  loginScreen.classList.add("hidden");
-  loginScreen.style.display = "none";
-  vaultScreen.classList.remove("hidden");
-  vaultScreen.style.display = "flex";
   renderVaultList(cachedVaultItems);
-}
+});
 
 // -------------------------------------------------------------
 // Vault Render & Management

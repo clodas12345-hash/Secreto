@@ -1,0 +1,52 @@
+name: Build APK V2 (Dynamic VersionCode & Timestamp)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-v2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Calculate Dynamic VersionCode (Run Number + Timestamp)
+        run: |
+          RUN_NUM=${{ github.run_number }}
+          TIMESTAMP=$(date +%s)
+          # Unique incrementing versionCode ensuring Android allows in-place updates without uninstallation
+          DYNAMIC_VERSION=$((RUN_NUM + 200000))
+          echo "Dynamic versionCode set to: $DYNAMIC_VERSION"
+
+          if [ -f "twa-manifest.json" ]; then
+            sed -i "s/\"versionCode\": [0-9]*/\"versionCode\": $DYNAMIC_VERSION/g" twa-manifest.json
+          fi
+
+          find . -name "build.gradle" -exec sed -i "s/versionCode [0-9]*/versionCode $DYNAMIC_VERSION/g" {} +
+          find . -name "AndroidManifest.xml" -exec sed -i "s/android:versionCode=\"[0-9]*\"/android:versionCode=\"$DYNAMIC_VERSION\"/g" {} +
+
+      - name: Compile and Build
+        run: |
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+            ./gradlew bundleRelease assembleRelease
+          else
+            npm install || true
+            npm run build || true
+          fi
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: secreto-app-v2-${{ github.run_number }}
+          path: |
+            **/*.apk
+            **/*.aab

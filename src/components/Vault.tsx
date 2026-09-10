@@ -1580,7 +1580,7 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                         onClick={async () => {
                           if (window.confirm("Deseja desconectar a conta da nuvem deste aparelho?")) {
                             await auth.signOut();
-                            setSyncStatus('idle');
+                            setDbSyncStatus('saved');
                           }
                         }}
                         className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-xl transition-all shrink-0"

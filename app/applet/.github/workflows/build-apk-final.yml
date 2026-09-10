@@ -1,0 +1,51 @@
+name: Build APK Final (Dynamic VersionCode)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set Dynamic VersionCode
+        run: |
+          # Dynamic versionCode based on GitHub run_number to ensure updates install over previous APKs
+          RUN_NUMBER=${{ github.run_number }}
+          VERSION_CODE=$((RUN_NUMBER + 100000))
+          echo "Using dynamic versionCode: $VERSION_CODE"
+
+          # Update twa-manifest.json if present
+          if [ -f "twa-manifest.json" ]; then
+            sed -i "s/\"versionCode\": [0-9]*/\"versionCode\": $VERSION_CODE/g" twa-manifest.json
+          fi
+
+          # Update build.gradle if present
+          find . -name "build.gradle" -exec sed -i "s/versionCode [0-9]*/versionCode $VERSION_CODE/g" {} +
+          find . -name "AndroidManifest.xml" -exec sed -i "s/android:versionCode=\"[0-9]*\"/android:versionCode=\"$VERSION_CODE\"/g" {} +
+
+      - name: Build APK / TWA Package
+        run: |
+          if [ -f "gradlew" ]; then
+            chmod +x gradlew
+            ./gradlew assembleRelease
+          else
+            echo "Running build scripts if available..."
+            npm install || true
+            npm run build || true
+          fi

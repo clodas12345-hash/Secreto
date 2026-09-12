@@ -13,6 +13,7 @@ import JSZip from 'jszip';
 import { identifyAppOrSite, getFaviconUrl, KNOWN_APPS, RecognizedApp } from '../utils/appIdentifier';
 import { FieldShiftArrows, FieldSwapDivider, shiftOrSwapFields } from './FieldShiftControls';
 import PermissionsModal from './PermissionsModal';
+import FaceBiometricScanner from './FaceBiometricScanner';
 
 export default function Vault({ 
   onLogout, 
@@ -143,6 +144,12 @@ export default function Vault({
     }
     return !!cred;
   });
+  const [ownerFacePhoto, setOwnerFacePhoto] = useState<string | null>(() => {
+    return localStorage.getItem('owner_face_profile_photo');
+  });
+  const [isFaceEnrollOpen, setIsFaceEnrollOpen] = useState(false);
+  const [isFaceVerifyTestOpen, setIsFaceVerifyTestOpen] = useState(false);
+  const [faceTestMessage, setFaceTestMessage] = useState('');
   const [authCombination, setAuthCombination] = useState<'facial_password' | 'facial_fingerprint'>(() => {
     return (localStorage.getItem('auth_combination') as 'facial_password' | 'facial_fingerprint') || 'facial_password';
   });
@@ -1806,7 +1813,104 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-zinc-800/80">
+                  {/* Seção de Cadastro Facial / Varredura */}
+                  <div className="pt-4 border-t border-zinc-800/80">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h4 className="text-sm font-bold text-zinc-200 flex items-center gap-2">
+                          <ScanFace className="w-4 h-4 text-blue-400" />
+                          <span>Cadastro Facial do Proprietário (Varredura Facial)</span>
+                        </h4>
+                        <p className="text-xs text-zinc-400 mt-0.5">
+                          Usado pela câmera frontal ao digitar a senha para confirmar se é você mesmo.
+                        </p>
+                      </div>
+                    </div>
+
+                    {faceTestMessage && (
+                      <div className="mb-3 p-3 bg-blue-500/10 border border-blue-500/20 text-blue-300 rounded-xl text-xs font-medium">
+                        {faceTestMessage}
+                      </div>
+                    )}
+
+                    {ownerFacePhoto ? (
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-zinc-950 p-4 rounded-2xl border border-zinc-800">
+                        <div className="flex items-center gap-3 w-full sm:w-auto">
+                          <div className="w-14 h-14 rounded-2xl overflow-hidden border-2 border-emerald-500/50 shadow-md shadow-emerald-500/10 bg-black shrink-0 relative">
+                            <img src={ownerFacePhoto} alt="Rosto do Proprietário" className="w-full h-full object-cover" />
+                            <div className="absolute bottom-0 right-0 p-0.5 bg-emerald-500 rounded-tl-md">
+                              <CheckCircle2 className="w-3 h-3 text-black" />
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-emerald-400 text-xs font-bold flex items-center gap-1.5">
+                              <ShieldCheck className="w-4 h-4" /> Rosto Cadastrado e Ativo
+                            </span>
+                            <p className="text-[11px] text-zinc-400 mt-0.5">
+                              Varredura habilitada para validação de senha.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setIsFaceVerifyTestOpen(true)}
+                            className="px-3 py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <ScanFace className="w-3.5 h-3.5" />
+                            <span>Testar Varredura</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsFaceEnrollOpen(true)}
+                            className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Recadastrar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              localStorage.removeItem('owner_face_profile_photo');
+                              localStorage.removeItem('owner_face_features');
+                              setOwnerFacePhoto(null);
+                              setFaceTestMessage('Perfil facial removido com sucesso.');
+                              setTimeout(() => setFaceTestMessage(''), 3000);
+                            }}
+                            className="p-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 rounded-xl transition-all cursor-pointer"
+                            title="Remover Rosto"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-zinc-950 p-4 rounded-2xl border border-dashed border-zinc-800">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-500 shrink-0">
+                            <ScanFace className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <span className="text-zinc-300 text-xs font-bold">Nenhum rosto cadastrado ainda</span>
+                            <p className="text-[11px] text-zinc-500 mt-0.5">
+                              Tire uma selfie com a câmera frontal para ativar o reconhecimento facial.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setIsFaceEnrollOpen(true)}
+                          className="w-full sm:w-auto px-4 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <Camera className="w-4 h-4" />
+                          <span>Cadastrar Rosto com Câmera</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-4 border-t border-zinc-800/80">
                     {bioError && (
                       <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg text-xs">
                         {bioError}
@@ -1816,7 +1920,7 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                     {hasBiometry ? (
                       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-zinc-950 p-3.5 rounded-2xl border border-zinc-800">
                         <span className="text-emerald-400 text-xs font-bold flex items-center gap-2">
-                          <ShieldCheck className="w-4 h-4" /> Biometria (Face/Digital) Cadastrada
+                          <ShieldCheck className="w-4 h-4" /> Biometria Nativa do Dispositivo Ativa
                         </span>
                         <button 
                           onClick={removeBiometry}
@@ -1829,14 +1933,14 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                     ) : (
                       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-zinc-950 p-3.5 rounded-2xl border border-zinc-800">
                         <span className="text-zinc-400 text-xs">
-                          Cadastre os dados biométricos do dispositivo para habilitar a validação.
+                          Cadastre os dados biométricos do sistema (Touch ID / Fingerprint) se desejar.
                         </span>
                         <button 
                           onClick={registerBiometry}
                           disabled={isBioProcessing}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50 shadow-md shadow-blue-600/20"
+                          className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold transition-all disabled:opacity-50 border border-zinc-700"
                         >
-                          {isBioProcessing ? 'Processando...' : 'Cadastrar Biometria'}
+                          {isBioProcessing ? 'Processando...' : 'Cadastrar Digital'}
                         </button>
                       </div>
                     )}
@@ -4492,6 +4596,37 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
         </div>
       )}
 
+
+      {/* Modal: Cadastro Facial do Proprietário */}
+      <FaceBiometricScanner
+        isOpen={isFaceEnrollOpen}
+        mode="enroll"
+        title="Cadastrar Rosto do Proprietário"
+        subtitle="Mapeando biometria facial para varredura"
+        onClose={() => setIsFaceEnrollOpen(false)}
+        onEnrolled={(photo) => {
+          setOwnerFacePhoto(photo);
+          setFaceTestMessage('Rosto cadastrado com sucesso! A varredura facial está ativada.');
+          setTimeout(() => setFaceTestMessage(''), 4000);
+        }}
+      />
+
+      {/* Modal: Teste de Varredura Facial */}
+      <FaceBiometricScanner
+        isOpen={isFaceVerifyTestOpen}
+        mode="verify"
+        title="Teste de Varredura Facial"
+        subtitle="Simulação da validação facial ao digitar a senha"
+        onClose={() => setIsFaceVerifyTestOpen(false)}
+        onVerifySuccess={(similarity) => {
+          setFaceTestMessage(`Teste concluído: Rosto Reconhecido com ${similarity}% de precisão!`);
+          setTimeout(() => setFaceTestMessage(''), 4000);
+        }}
+        onVerifyFailed={(similarity) => {
+          setFaceTestMessage(`Teste concluído: Rosto Não Reconhecido (${similarity}% de similaridade).`);
+          setTimeout(() => setFaceTestMessage(''), 4000);
+        }}
+      />
 
     </div>
   );

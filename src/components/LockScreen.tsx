@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { NativeBiometric } from '@capgo/capacitor-native-biometric';
+import FaceBiometricScanner from './FaceBiometricScanner';
 import { 
   LockKeyhole, 
   KeyRound, 
@@ -60,6 +61,8 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
   const [showBigIconLightbox, setShowBigIconLightbox] = useState(false);
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
+  const [showFaceScanModal, setShowFaceScanModal] = useState(false);
+  const [pendingPassword, setPendingPassword] = useState('');
 
   // Biometrics
   const [hasBiometry, setHasBiometry] = useState(() => {
@@ -69,6 +72,9 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
        return false;
     }
     return !!cred;
+  });
+  const [hasFaceProfile, setHasFaceProfile] = useState(() => {
+    return !!localStorage.getItem('owner_face_profile_photo');
   });
   const [isBioAuthenticating, setIsBioAuthenticating] = useState(false);
   const [bioError, setBioError] = useState('');
@@ -187,9 +193,18 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
     // 2. Check if entered password matches master password
     const validPassword = masterPassword;
     if (inputPassword === validPassword) {
-      // Success!
-      setError('');
-      onUnlock(inputPassword);
+      const faceProfile = localStorage.getItem('owner_face_profile_photo');
+      const authCombo = localStorage.getItem('auth_combination') || 'facial_password';
+
+      // If facial authentication is active and face profile is registered -> trigger live camera face scan
+      if (faceProfile && authCombo !== 'password_only') {
+        setPendingPassword(inputPassword);
+        setShowFaceScanModal(true);
+      } else {
+        // Success without face scan requirement
+        setError('');
+        onUnlock(inputPassword);
+      }
     } else {
       // Wrong password!
       const newAttempts = failedAttempts + 1;
@@ -199,6 +214,36 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
 
       // Silently capture intruder photo in background
       captureIntruderPhoto(inputPassword);
+    }
+  };
+
+  const handleFaceVerifySuccess = (similarity: number) => {
+    setShowFaceScanModal(false);
+    setError('');
+    onUnlock(pendingPassword || masterPassword);
+  };
+
+  const handleFaceVerifyFailed = (similarity: number, intruderPhoto: string) => {
+    const newAttempts = failedAttempts + 1;
+    setFailedAttempts(newAttempts);
+    setError(`Acesso Negado! Rosto não reconhecido (${similarity}% de compatibilidade). Tentativa registrada.`);
+    triggerShake();
+
+    // Log intruder with captured live frame
+    try {
+      const raw = localStorage.getItem('access_attempts');
+      const existingAttempts = raw ? JSON.parse(raw) : [];
+      const newAttempt = {
+        id: 'att_' + Date.now(),
+        timestamp: new Date().toISOString(),
+        pinUsed: '[Senha Correta, Rosto Não Autorizado]',
+        success: false,
+        photoBase64: intruderPhoto
+      };
+      const updated = [newAttempt, ...existingAttempts].slice(0, 50);
+      localStorage.setItem('access_attempts', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Error logging face fail attempt:', e);
     }
   };
 
@@ -517,9 +562,7 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
                       setInputPassword(val);
                       if (error) setError('');
                       const savedDuressPin = localStorage.getItem('duress_pin') || '9999';
-                      if (val === masterPassword) {
-                        onUnlock(val);
-                      } else if (val === savedDuressPin) {
+                      if (val === savedDuressPin) {
                         onDuressUnlock();
                       }
                     }}
@@ -554,7 +597,23 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
                 </div>
               )}
 
-
+              {/* Primary Submit Button */}
+              <button
+                type="submit"
+                className="w-full py-3.5 px-4 bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-extrabold text-sm uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
+              >
+                {hasFaceProfile ? (
+                  <>
+                    <ScanFace className="w-4 h-4 text-cyan-300" />
+                    <span>Desbloquear (Senha + Varredura Facial)</span>
+                  </>
+                ) : (
+                  <>
+                    <LockKeyhole className="w-4 h-4" />
+                    <span>Desbloquear Cofre</span>
+                  </>
+                )}
+              </button>
 
               {/* Biometrics Alternative (if registered) */}
               {hasBiometry && (
@@ -750,6 +809,19 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
           </div>
         </div>
       )}
+      {/* Modal: Varredura Facial Biométrica ao Desbloquear */}
+      <FaceBiometricScanner
+        isOpen={showFaceScanModal}
+        mode="verify"
+        title="Varredura Facial Inteligente"
+        subtitle="Verificando identidade do proprietário do cofre"
+        onClose={() => {
+          setShowFaceScanModal(false);
+          setPendingPassword('');
+        }}
+        onVerifySuccess={handleFaceVerifySuccess}
+        onVerifyFailed={handleFaceVerifyFailed}
+      />
     </div>
   );
 }

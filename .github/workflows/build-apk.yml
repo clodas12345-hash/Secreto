@@ -36,6 +36,15 @@ jobs:
         npx cap add android
         npx cap sync
 
+    - name: Instalar @capacitor/assets
+      run: npm install @capacitor/assets --save-dev
+
+    - name: Gerar ícones e splash screen
+      run: npx capacitor-assets generate --android
+
+    - name: Sincronizar Capacitor novamente
+      run: npx cap sync android
+
     - name: Build Android Debug APK
       run: |
         cd android

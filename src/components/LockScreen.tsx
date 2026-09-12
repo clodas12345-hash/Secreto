@@ -70,6 +70,11 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
   const [showFaceScanModal, setShowFaceScanModal] = useState(false);
   const [pendingPassword, setPendingPassword] = useState('');
 
+  // Combination mode
+  const [authCombination, setAuthCombination] = useState(() => {
+    return localStorage.getItem('auth_combination') || 'facial_password';
+  });
+
   // Biometrics
   const [hasBiometry, setHasBiometry] = useState(() => {
     const cred = localStorage.getItem('webauthn_cred_id');
@@ -85,6 +90,7 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
   const [isBioAuthenticating, setIsBioAuthenticating] = useState(false);
   const [bioError, setBioError] = useState('');
   const [isProcessingUnlock, setIsProcessingUnlock] = useState(false);
+  const [showPasswordFallback, setShowPasswordFallback] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const hiddenVideoRef = useRef<HTMLVideoElement>(null);
@@ -134,19 +140,20 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
   };
 
   useEffect(() => {
-    // Focus input on load
+    // Focus input on load if password input is displayed
     inputRef.current?.focus();
 
     // Se já configurou o cofre, inicia a câmera oculta para captura invisível instantânea
     if (!isFirstSetup) {
       startHiddenCamera();
 
-      // Se a combinação for Digital + Facial, dispara a digital do Android imediatamente (instantânea)
-      const authCombo = localStorage.getItem('auth_combination') || 'facial_password';
-      if (authCombo === 'facial_fingerprint' && hasBiometry) {
+      // Se a combinação for Digital + Facial, dispara a digital do Android imediatamente
+      const currentCombo = localStorage.getItem('auth_combination') || 'facial_password';
+      setAuthCombination(currentCombo);
+      if (currentCombo === 'facial_fingerprint' && hasBiometry) {
         const timer = setTimeout(() => {
           handleBiometricUnlock();
-        }, 250);
+        }, 300);
         return () => clearTimeout(timer);
       }
     }
@@ -156,14 +163,24 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
     };
   }, [isFirstSetup, hasBiometry]);
 
-  // Captura instantânea e silenciosa de foto e extração de vetor facial
-  const captureStealthSnapshotAndVector = async (): Promise<{ photo: string | null; vector: number[] | null }> => {
+  // Captura instantânea e silenciosa de múltiplos frames para alta precisão facial
+  const captureStealthSnapshotAndVector = async (): Promise<{ photo: string | null; allSamples: { photo: string; vector: number[] }[] }> => {
     try {
-      // 1. Tenta pegar do stream oculto já em execução
+      // 1. Tenta pegar do stream oculto já em execução com multi-sampling (3 frames)
       if (hiddenVideoRef.current && hiddenVideoRef.current.readyState >= 2) {
-        const photo = captureVideoFrameBase64(hiddenVideoRef.current);
-        const vector = await extractFaceVector(hiddenVideoRef.current);
-        return { photo, vector };
+        const samples: { photo: string; vector: number[] }[] = [];
+        for (let i = 0; i < 3; i++) {
+          const photo = captureVideoFrameBase64(hiddenVideoRef.current);
+          const vector = await extractFaceVector(hiddenVideoRef.current);
+          samples.push({ photo, vector });
+          if (i < 2) {
+            await new Promise(r => setTimeout(r, 60));
+          }
+        }
+        return { 
+          photo: samples[samples.length - 1].photo, 
+          allSamples: samples
+        };
       }
 
       // 2. Se o stream oculto não estiver pronto, abre rapidamente um stream silencioso
@@ -177,20 +194,26 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
         tempVideo.setAttribute('playsinline', 'true');
         tempVideo.muted = true;
         await tempVideo.play();
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 180));
 
-        const photo = captureVideoFrameBase64(tempVideo);
-        const vector = await extractFaceVector(tempVideo);
+        const samples: { photo: string; vector: number[] }[] = [];
+        for (let i = 0; i < 3; i++) {
+          const photo = captureVideoFrameBase64(tempVideo);
+          const vector = await extractFaceVector(tempVideo);
+          samples.push({ photo, vector });
+          if (i < 2) await new Promise(r => setTimeout(r, 60));
+        }
+
         tempStream.getTracks().forEach(t => t.stop());
-        return { photo, vector };
+        return { photo: samples[samples.length - 1].photo, allSamples: samples };
       }
     } catch (err) {
       console.warn('Falha na captura stealth da câmera:', err);
     }
-    return { photo: null, vector: null };
+    return { photo: null, allSamples: [] };
   };
 
-  // Comparação biométrica silenciosa em segundo plano
+  // Comparação biométrica silenciosa multi-frame em segundo plano
   const verifyStealthFace = async (): Promise<{ isMatch: boolean; similarity: number; photo: string | null }> => {
     const storedVectorRaw = localStorage.getItem('owner_face_features');
     const storedPhoto = localStorage.getItem('owner_face_profile_photo');
@@ -200,11 +223,11 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
       return { isMatch: true, similarity: 100, photo: null };
     }
 
-    const { photo, vector } = await captureStealthSnapshotAndVector();
+    const { photo, allSamples } = await captureStealthSnapshotAndVector();
 
-    if (!photo || !vector) {
-      // Se a câmera estiver indisponível no momento, permite validar apenas com a senha/digital correta
-      return { isMatch: true, similarity: 80, photo: null };
+    if (!allSamples || allSamples.length === 0) {
+      // Se a câmera estiver temporariamente indisponível no dispositivo, permite validar com a digital/senha
+      return { isMatch: true, similarity: 85, photo: null };
     }
 
     try {
@@ -215,11 +238,25 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
         ownerVector = await extractFaceVector(storedPhoto);
       }
 
-      const matchResult: FaceMatchResult = compareFaceVectors(ownerVector, vector);
+      let highestSimilarity = 0;
+      let anyMatch = false;
+      let chosenPhoto = photo;
+
+      for (const sample of allSamples) {
+        const res: FaceMatchResult = compareFaceVectors(ownerVector, sample.vector);
+        if (res.similarity > highestSimilarity) {
+          highestSimilarity = res.similarity;
+          chosenPhoto = sample.photo;
+        }
+        if (res.isMatch || res.similarity >= 50) {
+          anyMatch = true;
+        }
+      }
+
       return {
-        isMatch: matchResult.isMatch,
-        similarity: matchResult.similarity,
-        photo
+        isMatch: anyMatch || highestSimilarity >= 50,
+        similarity: highestSimilarity,
+        photo: chosenPhoto
       };
     } catch (err) {
       console.error('Erro na comparação facial stealth:', err);
@@ -401,12 +438,12 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
            description: "Toque no sensor de digital"
          });
 
-         const { photo, vector } = await stealthPhotoPromise;
+         const { photo, allSamples } = await stealthPhotoPromise;
          const faceProfile = localStorage.getItem('owner_face_profile_photo');
          const authCombo = localStorage.getItem('auth_combination') || 'facial_password';
 
          // Se combinação for digital + facial, valida se o rosto do dono também confere
-         if (faceProfile && authCombo === 'facial_fingerprint' && vector) {
+         if (faceProfile && authCombo === 'facial_fingerprint' && allSamples && allSamples.length > 0) {
            const storedVectorRaw = localStorage.getItem('owner_face_features');
            let ownerVector: number[] = [];
            if (storedVectorRaw) {
@@ -414,10 +451,18 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
            } else if (faceProfile) {
              ownerVector = await extractFaceVector(faceProfile);
            }
-           const matchResult = compareFaceVectors(ownerVector, vector);
-           if (!matchResult.isMatch) {
-             logIntruderAttempt('[Digital]', photo, `Rosto não compatível: ${matchResult.similarity}%`);
-             setBioError('Acesso bloqueado: Rosto não autorizado.');
+
+           let highestSimilarity = 0;
+           let isMatch = false;
+           for (const sample of allSamples) {
+             const res = compareFaceVectors(ownerVector, sample.vector);
+             if (res.similarity > highestSimilarity) highestSimilarity = res.similarity;
+             if (res.isMatch || res.similarity >= 50) isMatch = true;
+           }
+
+           if (!isMatch && highestSimilarity < 50) {
+             logIntruderAttempt('[Digital]', photo, `Rosto não compatível: ${highestSimilarity}%`);
+             setBioError(`Acesso bloqueado: Rosto não autorizado (${highestSimilarity}%).`);
              setIsBioAuthenticating(false);
              return;
            }
@@ -447,11 +492,11 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
         });
 
         if (assertion) {
-          const { photo, vector } = await stealthPhotoPromise;
+          const { photo, allSamples } = await stealthPhotoPromise;
           const faceProfile = localStorage.getItem('owner_face_profile_photo');
           const authCombo = localStorage.getItem('auth_combination') || 'facial_password';
 
-          if (faceProfile && authCombo === 'facial_fingerprint' && vector) {
+          if (faceProfile && authCombo === 'facial_fingerprint' && allSamples && allSamples.length > 0) {
             const storedVectorRaw = localStorage.getItem('owner_face_features');
             let ownerVector: number[] = [];
             if (storedVectorRaw) {
@@ -459,10 +504,18 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
             } else if (faceProfile) {
               ownerVector = await extractFaceVector(faceProfile);
             }
-            const matchResult = compareFaceVectors(ownerVector, vector);
-            if (!matchResult.isMatch) {
-              logIntruderAttempt('[Digital/WebAuthn]', photo, `Rosto não compatível: ${matchResult.similarity}%`);
-              setBioError('Acesso bloqueado: Rosto não autorizado.');
+
+            let highestSimilarity = 0;
+            let isMatch = false;
+            for (const sample of allSamples) {
+              const res = compareFaceVectors(ownerVector, sample.vector);
+              if (res.similarity > highestSimilarity) highestSimilarity = res.similarity;
+              if (res.isMatch || res.similarity >= 50) isMatch = true;
+            }
+
+            if (!isMatch && highestSimilarity < 50) {
+              logIntruderAttempt('[Digital/WebAuthn]', photo, `Rosto não compatível: ${highestSimilarity}%`);
+              setBioError(`Acesso bloqueado: Rosto não autorizado (${highestSimilarity}%).`);
               setIsBioAuthenticating(false);
               return;
             }
@@ -672,8 +725,91 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
                 <span>Salvar Senha e Proteger Aplicativo</span>
               </button>
             </form>
+          ) : authCombination === 'facial_fingerprint' && hasBiometry && !showPasswordFallback ? (
+            /* =================== BIOMETRIC-ONLY UNLOCK MODE (Facial + Digital) =================== */
+            <div className="space-y-4">
+              <div className="text-center mb-1">
+                <h2 className="text-base font-bold text-zinc-100">Autenticação Biométrica</h2>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Toque no leitor de digital para desbloquear o aplicativo:
+                </p>
+              </div>
+
+              {/* Central Pulse Fingerprint Icon */}
+              <div className="py-4 flex flex-col items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleBiometricUnlock}
+                  disabled={isBioAuthenticating}
+                  className="w-24 h-24 rounded-3xl bg-gradient-to-tr from-cyan-500/10 via-blue-500/20 to-indigo-500/10 border border-cyan-500/40 hover:border-cyan-400 flex items-center justify-center cursor-pointer shadow-xl shadow-cyan-500/10 hover:scale-105 active:scale-95 transition-all group disabled:opacity-60"
+                  title="Toque para autenticar com biometria"
+                >
+                  <Fingerprint className={`w-12 h-12 ${isBioAuthenticating ? 'text-cyan-300 animate-pulse' : 'text-cyan-400 group-hover:text-cyan-300'}`} />
+                </button>
+                <span className="text-xs text-zinc-400 font-medium text-center">
+                  {isBioAuthenticating ? 'Lendo Digital e Identidade...' : 'Toque no sensor ou no botão abaixo'}
+                </span>
+              </div>
+
+              {/* Error Notification */}
+              {error && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 shrink-0 text-red-400" />
+                  <span className="flex-1">{error}</span>
+                </div>
+              )}
+
+              {/* Biometrics Error */}
+              {bioError && (
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2">
+                  <Info className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                  <span className="flex-1">{bioError}</span>
+                </div>
+              )}
+
+              {/* Primary Biometric Button */}
+              <button
+                type="button"
+                onClick={handleBiometricUnlock}
+                disabled={isBioAuthenticating}
+                className="w-full py-3.5 px-4 bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-extrabold text-sm uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] disabled:opacity-60"
+              >
+                {isBioAuthenticating ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-cyan-300" />
+                    <span>Lendo Biometria...</span>
+                  </>
+                ) : (
+                  <>
+                    <Fingerprint className="w-4 h-4 text-cyan-200" />
+                    <span>Desbloquear com Digital</span>
+                  </>
+                )}
+              </button>
+
+              {/* Actions Footer */}
+              <div className="pt-2 flex items-center justify-between text-xs text-zinc-500">
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordFallback(true)}
+                  className="hover:text-zinc-300 transition-colors cursor-pointer flex items-center gap-1 text-[11px]"
+                >
+                  <KeyRound className="w-3 h-3" />
+                  <span>Usar Senha de Emergência</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(true)}
+                  className="hover:text-blue-400 transition-colors cursor-pointer flex items-center gap-1 text-[11px]"
+                >
+                  <HelpCircle className="w-3 h-3" />
+                  <span>Esqueci a senha</span>
+                </button>
+              </div>
+            </div>
           ) : (
-            /* =================== UNLOCK MODE =================== */
+            /* =================== PASSWORD UNLOCK MODE =================== */
             <form onSubmit={handleUnlock} className="space-y-4">
               <div className="text-center mb-1">
                 <h2 className="text-base font-bold text-zinc-100">Cofre Bloqueado</h2>
@@ -756,7 +892,10 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
               {hasBiometry && (
                 <button
                   type="button"
-                  onClick={handleBiometricUnlock}
+                  onClick={() => {
+                    setShowPasswordFallback(false);
+                    handleBiometricUnlock();
+                  }}
                   disabled={isBioAuthenticating}
                   className="w-full py-2.5 px-4 bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/60 hover:border-blue-500/50 text-zinc-200 hover:text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >

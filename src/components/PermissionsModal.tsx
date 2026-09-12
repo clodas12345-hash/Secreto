@@ -431,8 +431,7 @@ export default function PermissionsModal({
         // Envia notificação de teste real
         try {
           new Notification('🛡️ GKD Secreto: Permissão Concedida', {
-            body: 'Seu cofre agora enviará alertas de intrusos e lembretes de segurança.',
-            icon: '/app-icon.png'
+            body: 'Seu cofre agora enviará alertas de intrusos e lembretes de segurança.'
           });
         } catch {
           // Em alguns browsers precisa de ServiceWorker

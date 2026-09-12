@@ -26,5 +26,14 @@
       "chrome",
       "node"
     ]
-  }
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "app",
+    "apk_bundle"
+  ]
 }

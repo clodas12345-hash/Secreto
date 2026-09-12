@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { auth } from '../lib/firebase';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { Cloud, Loader2 } from 'lucide-react';
+import { Cloud, Loader2, ZoomIn, ZoomOut } from 'lucide-react';
 
 export default function CloudAuth() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isIconBig, setIsIconBig] = useState(false);
 
   const handleGoogleLogin = async () => {
     setError('');
@@ -30,15 +31,26 @@ export default function CloudAuth() {
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/40 via-black to-black"></div>
       
       <div className="relative z-10 w-full max-w-md flex flex-col items-center animate-in fade-in slide-in-from-bottom-8 duration-700">
-        <div className="w-24 h-24 bg-zinc-900 rounded-[2rem] flex items-center justify-center mb-8 border border-zinc-800 shadow-2xl">
-          <Cloud className="w-10 h-10 text-blue-500" />
+        <div 
+          onClick={() => setIsIconBig(!isIconBig)}
+          className={`transition-all duration-300 cursor-pointer group bg-slate-950 rounded-[2rem] flex flex-col items-center justify-center mb-8 border border-blue-500/50 shadow-2xl p-2 overflow-hidden relative ${
+            isIconBig 
+              ? 'w-56 h-56 sm:w-64 sm:h-64 shadow-[0_0_50px_rgba(59,130,246,0.4)] border-cyan-400 scale-105' 
+              : 'w-24 h-24 hover:scale-110 hover:border-blue-400'
+          }`}
+          title={isIconBig ? 'Toque para reduzir' : 'Toque para ampliar o ícone'}
+        >
+          <img src="/app-icon.png" alt="GKD Mobility" className="w-full h-full object-contain rounded-2xl" referrerPolicy="no-referrer" />
+          <div className="absolute inset-0 bg-blue-900/30 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl flex items-center justify-center">
+            {isIconBig ? <ZoomOut className="w-6 h-6 text-white drop-shadow" /> : <ZoomIn className="w-5 h-5 text-white drop-shadow" />}
+          </div>
         </div>
         
-        <h1 className="text-2xl font-light tracking-widest text-zinc-100 mb-2 uppercase text-center">
-          Nuvem do Cofre
+        <h1 className="text-2xl font-bold tracking-wider text-zinc-100 mb-2 uppercase text-center">
+          <span className="text-blue-500">GKD</span> Secreto
         </h1>
-        <p className="text-zinc-500 text-[10px] mb-8 uppercase tracking-[0.3em] text-center font-bold">
-          Sincronização Segura
+        <p className="text-blue-400 text-[10px] mb-8 uppercase tracking-[0.3em] text-center font-bold">
+          Cofre Confidencial & Sincronização Segura
         </p>
 
         {error && (

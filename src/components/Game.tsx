@@ -66,19 +66,21 @@ export default function Game({ onHiddenEscape }: GameProps) {
   return (
     <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center font-sans text-zinc-300">
       
-      {/* Hidden button in top left corner (e.g. tapping the title 'Jogo da Velha' 3 times) */}
+      {/* Hidden button in top left corner (tapping 3 times) */}
       <div 
-        className="absolute top-4 left-4 p-4 opacity-10 cursor-default select-none"
+        className="absolute top-4 left-4 p-3 opacity-30 hover:opacity-80 cursor-pointer select-none rounded-lg bg-zinc-900/50 border border-zinc-800/40 transition-opacity"
         onClick={() => setClicks(c => c + 1)}
+        title="Toque 3 vezes para retornar ao cofre"
       >
-        <span className="text-xs">v1.0</span>
+        <span className="text-[10px] font-mono text-zinc-500">v2.5 • Discrição</span>
       </div>
 
       <button 
-        className="absolute bottom-4 right-4 text-[10px] font-bold text-zinc-800 hover:text-zinc-500 transition-colors uppercase tracking-widest cursor-pointer"
+        className="absolute bottom-4 right-4 px-3 py-1.5 rounded-lg bg-zinc-900/60 hover:bg-blue-600/20 border border-zinc-800 hover:border-blue-500/40 text-[11px] font-bold text-zinc-600 hover:text-blue-400 transition-all uppercase tracking-wider cursor-pointer flex items-center gap-1.5"
         onClick={onHiddenEscape}
+        title="Retornar ao cofre GKD Secreto"
       >
-        KGD
+        <span>🔒 GKD • Voltar ao Cofre</span>
       </button>
 
       <div className="max-w-md w-full p-6">

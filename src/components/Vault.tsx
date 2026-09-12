@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Radar, LockKeyhole, LogOut, FileText, KeyRound, Plus, Eye, EyeOff, ShieldCheck, ShieldAlert, Fingerprint, ScanFace, History, Folder, FolderPlus, Edit, Trash2, Copy, Settings, ChevronUp, ChevronDown, HelpCircle, Info, X, Camera, Grid, List, UploadCloud, Upload, Images, CheckCircle2, Download, Puzzle, Globe, Sparkles, Smartphone, Monitor, CheckCircle, ExternalLink, RefreshCw, Layers, Shield, Laptop, Shuffle, Hash, Check, Sliders, ArrowRight, Dices, Database, Cloud, CloudCheck, AlertCircle } from 'lucide-react';
+import { Radar, LockKeyhole, LogOut, FileText, KeyRound, Plus, Eye, EyeOff, ShieldCheck, ShieldAlert, Fingerprint, ScanFace, History, Folder, FolderPlus, Edit, Trash2, Copy, Settings, ChevronUp, ChevronDown, HelpCircle, Info, X, Camera, Grid, List, UploadCloud, Upload, Images, CheckCircle2, Download, Puzzle, Globe, Sparkles, Smartphone, Monitor, CheckCircle, ExternalLink, RefreshCw, Layers, Shield, Laptop, Shuffle, Hash, Check, Sliders, ArrowRight, Dices, Database, Cloud, CloudCheck, AlertCircle, Gamepad2, BookOpen, AlertTriangle, ZoomIn, Maximize2, Minimize2 } from 'lucide-react';
+import Game from './Game';
 import { PasswordEntry, DocumentEntry, AccessAttempt, Folder as FolderType } from '../types';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { updateEmail, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
@@ -8,8 +9,20 @@ import { auth, db } from '../lib/firebase';
 import CryptoJS from 'crypto-js';
 import JSZip from 'jszip';
 import { identifyAppOrSite, getFaviconUrl, KNOWN_APPS, RecognizedApp } from '../utils/appIdentifier';
+import { FieldShiftArrows, FieldSwapDivider, shiftOrSwapFields } from './FieldShiftControls';
+import PermissionsModal from './PermissionsModal';
 
-export default function Vault({ onLogout, userPin }: { onLogout: () => void, userPin: string, cloudUserId?: string }) {
+export default function Vault({ 
+  onLogout, 
+  userPin, 
+  cloudUserId,
+  onMasterPasswordChange 
+}: { 
+  onLogout: () => void, 
+  userPin: string, 
+  cloudUserId?: string,
+  onMasterPasswordChange?: (newPass: string) => void 
+}) {
   const [is2FAEnabled, setIs2FAEnabled] = useState(!!localStorage.getItem('2fa_code'));
   const [new2FACode, setNew2FACode] = useState('');
   const [isLiveCameraOpen, setIsLiveCameraOpen] = useState(false);
@@ -66,31 +79,21 @@ export default function Vault({ onLogout, userPin }: { onLogout: () => void, use
   const [activeTab, setActiveTab] = useState<'passwords' | 'documents' | 'settings' | 'help' | 'security'>('passwords');
   const [settingsSubTab, setSettingsSubTab] = useState<'security' | 'extension' | 'native'>('security');
   const [showAppInfoModal, setShowAppInfoModal] = useState(false);
+  const [infoModalTab, setInfoModalTab] = useState<'descricao' | 'discricao' | 'disciplina'>('disciplina');
+  const [showBigIconLightbox, setShowBigIconLightbox] = useState(false);
+  const [showPermissionsModal, setShowPermissionsModal] = useState(false);
+  const [isDisguiseActive, setIsDisguiseActive] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [iconDownloadSuccess, setIconDownloadSuccess] = useState(false);
   const [customIconSuccess, setCustomIconSuccess] = useState(false);
 
   const handleDownloadOfficialIcon = () => {
-    const svgImg = new Image();
-    svgImg.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 512;
-      canvas.height = 512;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, 512, 512);
-      ctx.drawImage(svgImg, 0, 0, 512, 512);
-
-      const link = document.createElement('a');
-      link.download = 'gkd-mobility-icon-512x512.png';
-      link.href = canvas.toDataURL('image/png', 0.9);
-      link.click();
-      setIconDownloadSuccess(true);
-      setTimeout(() => setIconDownloadSuccess(false), 3000);
-    };
-    svgImg.src = '/app-icon.svg?' + Date.now();
+    const link = document.createElement('a');
+    link.download = 'gkd-mobility-icon-512x512.png';
+    link.href = '/app-icon.png';
+    link.click();
+    setIconDownloadSuccess(true);
+    setTimeout(() => setIconDownloadSuccess(false), 3000);
   };
 
   const handleOptimizeCustomIcon = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -139,29 +142,54 @@ export default function Vault({ onLogout, userPin }: { onLogout: () => void, use
   const [currentPinInput, setCurrentPinInput] = useState('');
   const [newPinInput, setNewPinInput] = useState('');
   const [confirmPinInput, setConfirmPinInput] = useState('');
+  const [showCurrentPin, setShowCurrentPin] = useState(false);
+  const [showNewPinInput, setShowNewPinInput] = useState(false);
+  const [showConfirmPinInput, setShowConfirmPinInput] = useState(false);
   const [pinChangeError, setPinChangeError] = useState('');
   const [pinChangeSuccess, setPinChangeSuccess] = useState(false);
 
-  const handleChangePin = (e: React.FormEvent) => {
+  const [autoLockSetting, setAutoLockSetting] = useState<string>(() => {
+    return localStorage.getItem('auto_lock_time') || '5m';
+  });
+
+  const handleChangePin = async (e: React.FormEvent) => {
     e.preventDefault();
     setPinChangeError('');
     setPinChangeSuccess(false);
 
-    const savedPin = localStorage.getItem('vault_pin');
-    if (savedPin && currentPinInput !== savedPin) {
-      setPinChangeError('PIN atual incorreto.');
+    const savedMaster = localStorage.getItem('app_master_password') || localStorage.getItem('vault_pin') || localStorage.getItem('app_pin') || userPin;
+    if (savedMaster && currentPinInput !== savedMaster) {
+      setPinChangeError('Senha atual incorreta.');
+      return;
+    }
+    if (newPinInput.length < 3) {
+      setPinChangeError('A nova senha deve ter pelo menos 3 caracteres.');
       return;
     }
     if (newPinInput !== confirmPinInput) {
-      setPinChangeError('Os novos PINs não coincidem.');
-      return;
-    }
-    if (newPinInput.length < 4) {
-      setPinChangeError('O novo PIN deve ter pelo menos 4 dígitos.');
+      setPinChangeError('A confirmação da nova senha não coincide.');
       return;
     }
 
+    // Save master password keys
+    localStorage.setItem('app_master_password', newPinInput);
     localStorage.setItem('vault_pin', newPinInput);
+
+    // Re-encrypt existing vault data with the new password
+    try {
+      const payload = JSON.stringify({ folders, passwords, documents });
+      const encrypted = CryptoJS.AES.encrypt(payload, newPinInput).toString();
+      localStorage.setItem('vault_data', encrypted);
+
+      if (auth.currentUser) {
+        const docRef = doc(db, 'users', auth.currentUser.uid);
+        await setDoc(docRef, { encryptedData: encrypted }, { merge: true });
+      }
+    } catch (err) {
+      console.error('Erro ao recriptografar dados com a nova senha:', err);
+    }
+
+    onMasterPasswordChange?.(newPinInput);
     setPinChangeSuccess(true);
     setCurrentPinInput('');
     setNewPinInput('');
@@ -169,7 +197,7 @@ export default function Vault({ onLogout, userPin }: { onLogout: () => void, use
     setTimeout(() => {
       setIsChangingPin(false);
       setPinChangeSuccess(false);
-    }, 3000);
+    }, 4000);
   };
 
   const [bioError, setBioError] = useState('');
@@ -425,8 +453,29 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
       try {
         localEncrypted = localStorage.getItem('vault_data');
         if (localEncrypted) {
-          const bytes = CryptoJS.AES.decrypt(localEncrypted, userPin);
-          const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
+          let decryptedString = '';
+          try {
+            const bytes = CryptoJS.AES.decrypt(localEncrypted, userPin);
+            decryptedString = bytes.toString(CryptoJS.enc.Utf8);
+          } catch (e) {}
+
+          // Fallback if data was encrypted with 'default' or previous pin
+          if (!decryptedString) {
+            try {
+              const bytes = CryptoJS.AES.decrypt(localEncrypted, 'default');
+              decryptedString = bytes.toString(CryptoJS.enc.Utf8);
+            } catch (e) {}
+          }
+          if (!decryptedString) {
+            const oldPin = localStorage.getItem('vault_pin');
+            if (oldPin && oldPin !== userPin) {
+              try {
+                const bytes = CryptoJS.AES.decrypt(localEncrypted, oldPin);
+                decryptedString = bytes.toString(CryptoJS.enc.Utf8);
+              } catch (e) {}
+            }
+          }
+
           if (decryptedString) {
             const dec = JSON.parse(decryptedString);
             if (dec.folders) setFolders(dec.folders.filter((f: any) => f && f.name && f.name.trim().toLowerCase() !== 'sem pasta'));
@@ -435,7 +484,7 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
           }
         }
       } catch (e) {
-        if (localEncrypted) { alert('Atenção: PIN incorreto para descriptografar os dados locais. Desconectando.'); onLogout(); return; }
+        console.warn('Nota: dados locais protegidos com outra chave:', e);
       }
       
       setIsDataLoaded(true);
@@ -451,8 +500,19 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
           const data = docSnap.data();
           if (data.encryptedData) {
             try {
-              const bytes = CryptoJS.AES.decrypt(data.encryptedData, userPin);
-              const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
+              let decryptedString = '';
+              try {
+                const bytes = CryptoJS.AES.decrypt(data.encryptedData, userPin);
+                decryptedString = bytes.toString(CryptoJS.enc.Utf8);
+              } catch (e) {}
+
+              if (!decryptedString) {
+                try {
+                  const bytesFallback = CryptoJS.AES.decrypt(data.encryptedData, 'default');
+                  decryptedString = bytesFallback.toString(CryptoJS.enc.Utf8);
+                } catch (e) {}
+              }
+
               if (decryptedString) {
                 const dec = JSON.parse(decryptedString);
                 if (dec.folders) setFolders(dec.folders.filter((f: any) => f && f.name && f.name.trim().toLowerCase() !== 'sem pasta'));
@@ -1133,30 +1193,54 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
     .filter(d => activeFolderId === "none" ? !d.folderId : (activeFolderId ? d.folderId === activeFolderId : true))
     .sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { numeric: true, sensitivity: 'base' }));
 
+  if (isDisguiseActive) {
+    return <Game onHiddenEscape={() => setIsDisguiseActive(false)} />;
+  }
+
   return (
     <div className="bg-zinc-950 text-zinc-400 font-sans tracking-tight h-screen w-full overflow-hidden flex flex-col select-none">
       
       {/* Header */}
-      <header className="h-16 border-b border-zinc-800/50 flex items-center justify-between px-4 sm:px-8 bg-zinc-950/80 backdrop-blur-xl shadow-2xl">
+      <header className="h-16 border-b border-zinc-800/50 flex items-center justify-between px-2.5 sm:px-6 bg-zinc-950/80 backdrop-blur-xl shadow-2xl gap-2 min-w-0">
         <div 
-          onClick={() => setShowAppInfoModal(true)}
-          className="flex items-center gap-3 cursor-pointer group select-none hover:opacity-90 transition-all"
-          title="Clique para ver informações e descrição do aplicativo"
+          onClick={() => {
+            setInfoModalTab('disciplina');
+            setShowAppInfoModal(true);
+          }}
+          className="flex items-center gap-2 sm:gap-3 cursor-pointer group select-none hover:opacity-95 transition-all shrink min-w-0"
+          title="Clique para ver o Ícone em tamanho grande, Disciplina e Diretrizes do Cofre"
         >
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 group-hover:scale-105 group-hover:bg-blue-500 transition-all">
-            <LockKeyhole className="w-4 h-4 text-white" />
+          <div 
+            onClick={(e) => {
+              e.stopPropagation();
+              setInfoModalTab('disciplina');
+              setShowBigIconLightbox(true);
+            }}
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl overflow-hidden border border-blue-500/40 shadow-lg shadow-blue-500/20 group-hover:scale-110 group-hover:border-cyan-400 group-hover:shadow-blue-500/40 transition-all duration-200 shrink-0 bg-slate-950 p-0.5 relative cursor-pointer"
+            title="Toque para abrir o ícone em tamanho grande (512x512)"
+          >
+            <img src="/app-icon.png" alt="GKD Mobility" className="w-full h-full object-contain rounded-lg" referrerPolicy="no-referrer" />
+            <div className="absolute inset-0 bg-blue-600/30 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+              <ZoomIn className="w-3.5 h-3.5 text-white drop-shadow" />
+            </div>
           </div>
-          <div className="flex flex-col">
-            <span className="text-xl font-semibold tracking-tight text-zinc-100 uppercase group-hover:text-white transition-colors">
-              <span className="text-blue-500">Confidencial</span>
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm sm:text-lg font-bold tracking-tight text-zinc-100 uppercase group-hover:text-white transition-colors truncate">
+                <span className="text-blue-500">GKD</span> Secreto
+              </span>
+              <span className="px-1.5 py-0.5 text-[8px] font-extrabold bg-blue-500/15 text-blue-400 border border-blue-500/30 rounded tracking-wider shrink-0">PRO</span>
+            </div>
+            <span className="text-[9px] text-zinc-500 font-mono -mt-0.5 group-hover:text-blue-400 transition-colors hidden sm:flex items-center gap-1 truncate">
+              <span>GKD Mobility • Disciplina & Sobre</span>
+              <span className="text-[8px] text-blue-400/80 font-sans font-bold">(Clique p/ ampliar)</span>
             </span>
-            <span className="text-[9px] text-zinc-500 font-mono -mt-1 group-hover:text-blue-400 transition-colors">v2.5.0 • Sobre o App</span>
           </div>
         </div>
 
         {/* Indicador de Status do Banco de Dados em Nuvem */}
         <div 
-          className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800/80 text-xs shadow-inner cursor-pointer hover:border-blue-500/40 transition-all"
+          className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-900/80 border border-zinc-800/80 text-xs shadow-inner cursor-pointer hover:border-blue-500/40 transition-all"
           title={`Banco de Dados Firestore: Todas as senhas estão criptografadas e salvas com segurança na nuvem. Última sincronização: ${dbLastSyncedAt}`}
           onClick={() => alert(`🛡️ Status do Banco de Dados:\n\n• Suas senhas e documentos estão criptografados com chave AES-256 e salvos no banco de dados em nuvem.\n• Última sincronização realizada às ${dbLastSyncedAt}.\n• Sincronização automática em segundo plano ativada.`)}
         >
@@ -1182,43 +1266,60 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
           )}
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-4">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          <button 
+            type="button"
+            onClick={() => setIsDisguiseActive(true)} 
+            className="transition-all flex items-center gap-1 sm:gap-1.5 font-bold uppercase text-xs tracking-wider px-2 sm:px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-sm hover:scale-105 active:scale-95 shrink-0"
+            title="Ativar Modo Discrição (Camuflar imediatamente em tela de jogo discreta)"
+          >
+            <Gamepad2 className="w-4 h-4 text-amber-400" />
+            <span className="hidden md:inline">Discrição</span>
+          </button>
+
           <button 
             onClick={() => handleOpenRandomPasswordGenerator(activeFolderId)} 
-            className="transition-all flex items-center gap-1.5 font-bold uppercase text-xs tracking-wider px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 shadow-sm hover:scale-105 active:scale-95"
+            className="transition-all flex items-center gap-1 sm:gap-1.5 font-bold uppercase text-xs tracking-wider px-2 sm:px-2.5 py-1.5 rounded-xl bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 shadow-sm hover:scale-105 active:scale-95 shrink-0"
             title="Gerador de Senhas Aleatórias (Alfanumérico ou Numérico)"
           >
             <Shuffle className="w-4 h-4 text-blue-400" />
-            <span className="hidden sm:inline">Senhas Aleatórias</span>
+            <span className="hidden md:inline">Senhas</span>
           </button>
 
           <button 
             onClick={() => { setActiveTab('passwords'); setActiveFolderId(null); }} 
-            className={`transition-colors flex items-center gap-2 font-bold uppercase text-xs tracking-wider ${activeTab === 'passwords' || activeTab === 'documents' ? 'text-blue-500' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`transition-colors flex items-center gap-1 sm:gap-1.5 font-bold uppercase text-xs tracking-wider px-2 sm:px-2.5 py-1.5 rounded-xl shrink-0 ${activeTab === 'passwords' || activeTab === 'documents' ? 'text-blue-400 bg-blue-500/10 border border-blue-500/30' : 'text-zinc-500 hover:text-zinc-300'}`}
+            title="Cofre de Senhas e Documentos"
           >
-            <KeyRound className="w-4 h-4 sm:w-5 sm:h-5" />
+            <KeyRound className="w-4 h-4" />
             <span className="hidden md:inline">Cofre</span>
           </button>
 
           <button 
             onClick={() => setActiveTab(activeTab === 'help' ? 'passwords' : 'help')} 
-            className={`transition-colors flex items-center gap-2 font-bold uppercase text-xs tracking-wider ${activeTab === 'help' ? 'text-blue-500' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`transition-colors flex items-center gap-1 sm:gap-1.5 font-bold uppercase text-xs tracking-wider px-2 sm:px-2.5 py-1.5 rounded-xl shrink-0 ${activeTab === 'help' ? 'text-blue-400 bg-blue-500/10 border border-blue-500/30' : 'text-zinc-500 hover:text-zinc-300'}`}
+            title="Ajuda e Manual"
           >
-            <HelpCircle className="w-4 h-4 sm:w-5 sm:h-5" />
+            <HelpCircle className="w-4 h-4" />
             <span className="hidden md:inline">Ajuda</span>
           </button>
 
           <button 
             onClick={() => setActiveTab(activeTab === 'settings' ? 'passwords' : 'settings')} 
-            className={`transition-colors flex items-center gap-2 font-bold uppercase text-xs tracking-wider ${activeTab === 'settings' ? 'text-blue-500 bg-blue-500/10 px-3 py-1.5 rounded-xl border border-blue-500/30' : 'text-zinc-500 hover:text-zinc-300'}`}
+            className={`transition-colors flex items-center gap-1 sm:gap-1.5 font-bold uppercase text-xs tracking-wider px-2 sm:px-2.5 py-1.5 rounded-xl shrink-0 ${activeTab === 'settings' ? 'text-blue-400 bg-blue-500/10 border border-blue-500/30' : 'text-zinc-500 hover:text-zinc-300'}`}
+            title="Ajustes de Segurança e Configurações"
           >
-            <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="hidden sm:inline">Ajustes</span>
+            <Settings className="w-4 h-4" />
+            <span className="hidden md:inline">Ajustes</span>
           </button>
 
-          <button onClick={onLogout} className="text-blue-500 hover:text-blue-600 transition-colors flex items-center gap-1.5 font-bold uppercase text-xs tracking-wider">
-            <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="hidden sm:inline">Sair</span>
+          <button 
+            onClick={onLogout} 
+            className="transition-all flex items-center gap-1 font-bold uppercase text-xs tracking-wider px-2.5 sm:px-3 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 hover:text-blue-300 border border-blue-500/30 shadow-sm cursor-pointer active:scale-95 shrink-0"
+            title="Bloquear aplicativo com sua senha"
+          >
+            <LockKeyhole className="w-4 h-4 text-blue-400" />
+            <span className="hidden sm:inline">Bloquear</span>
           </button>
         </div>
       </header>
@@ -1292,6 +1393,14 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                   <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-800 shrink-0 shadow-inner flex-wrap gap-1">
                     <button
                       type="button"
+                      onClick={() => setShowPermissionsModal(true)}
+                      className="flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+                    >
+                      <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                      Permissões (8)
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setSettingsSubTab('security')}
                       className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
                         settingsSubTab === 'security'
@@ -1332,64 +1441,277 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                 {settingsSubTab === 'security' && (
                   <>
 
-                
-                <div className="bg-zinc-900/50 shadow-xl border border-zinc-800/50 rounded-xl p-6 mb-4">
-                  <h3 className="text-lg font-semibold text-zinc-100 mb-4">Senha PIN</h3>
-                  <div className="flex items-start gap-4">
-                    <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
-                      <KeyRound className="w-6 h-6 text-blue-400" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm text-zinc-400 mb-4">Altere o seu PIN de acesso (Fator de conhecimento).</p>
-                      
-                      {!isChangingPin ? (
-                        <button 
-                          onClick={() => setIsChangingPin(true)}
-                          className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg text-sm font-semibold transition-colors border border-blue-500/20"
+                    {/* Card de Solicitação das 8 Permissões do Sistema */}
+                    <div className="bg-gradient-to-r from-cyan-950/40 via-zinc-900 to-zinc-900 border border-cyan-500/40 rounded-2xl p-5 sm:p-6 mb-4 relative overflow-hidden shadow-xl">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-start sm:items-center gap-3">
+                          <div className="p-3 bg-cyan-500/15 border border-cyan-500/30 rounded-xl text-cyan-400 shrink-0">
+                            <ShieldCheck className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="text-base font-bold text-zinc-100">
+                                Permissões do Sistema & Hardware
+                              </h3>
+                              <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 rounded text-[10px] font-bold">
+                                8 Permissões
+                              </span>
+                            </div>
+                            <p className="text-xs text-zinc-300 mt-1 leading-relaxed">
+                              Câmera, Localização (GPS), Armazenamento Persistente, Sobrepor (Janela Flutuante), Segundo Plano, Microfone, Contatos e Notificações.
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowPermissionsModal(true)}
+                          className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-cyan-600/20 flex items-center justify-center gap-2 shrink-0 cursor-pointer active:scale-95"
                         >
-                          Trocar Senha PIN
+                          <ShieldCheck className="w-4 h-4" />
+                          <span>Solicitar / Gerenciar Permissões</span>
                         </button>
-                      ) : (
-                        <form onSubmit={handleChangePin} className="flex flex-col gap-3 animate-in fade-in max-w-xs">
-                          <input
-                            type="password"
-                            inputMode="numeric"
-                            placeholder="PIN Atual"
-                            value={currentPinInput}
-                            onChange={e => setCurrentPinInput(e.target.value)}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-zinc-100 text-center tracking-[0.5em] font-mono focus:outline-none focus:border-blue-500"
-                          />
-                          <input
-                            type="password"
-                            inputMode="numeric"
-                            placeholder="Novo PIN"
-                            value={newPinInput}
-                            onChange={e => setNewPinInput(e.target.value)}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-zinc-100 text-center tracking-[0.5em] font-mono focus:outline-none focus:border-blue-500"
-                          />
-                          <input
-                            type="password"
-                            inputMode="numeric"
-                            placeholder="Confirmar Novo PIN"
-                            value={confirmPinInput}
-                            onChange={e => setConfirmPinInput(e.target.value)}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-zinc-100 text-center tracking-[0.5em] font-mono focus:outline-none focus:border-blue-500"
-                          />
-                          
-                          {pinChangeError && <span className="text-xs text-red-400 text-center font-bold bg-red-500/10 p-2 rounded">{pinChangeError}</span>}
-                          {pinChangeSuccess && <span className="text-xs text-emerald-400 text-center font-bold bg-emerald-500/10 p-2 rounded">PIN atualizado com sucesso!</span>}
-                          
-                          <div className="flex gap-2 mt-2">
-                            <button type="button" onClick={() => { setIsChangingPin(false); setPinChangeError(''); setPinChangeSuccess(false); }} className="flex-1 px-4 py-2 text-zinc-400 hover:text-zinc-100 text-sm font-semibold transition-colors">
-                              Cancelar
-                            </button>
-                            <button type="submit" className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-semibold transition-colors">
-                              Salvar
+                      </div>
+                    </div>
+
+                
+                {/* Card de Senha de Abertura do Aplicativo */}
+                <div className="bg-zinc-900/50 shadow-xl border border-blue-500/30 rounded-2xl p-6 mb-4 relative overflow-hidden">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-800 pb-4 mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400">
+                        <KeyRound className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-zinc-100 flex items-center gap-2">
+                          <span>Senha de Abertura do Aplicativo</span>
+                          <span className="px-2 py-0.5 bg-blue-500/15 text-blue-400 border border-blue-500/30 rounded-md text-[10px] font-mono font-bold uppercase">
+                            Ativo
+                          </span>
+                        </h3>
+                        <p className="text-xs text-zinc-400 mt-0.5">
+                          A senha que você quiser para abrir e proteger o cofre ao iniciar.
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={onLogout}
+                      className="px-3 py-1.5 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+                      title="Bloquear a tela agora para testar a senha"
+                    >
+                      <LockKeyhole className="w-3.5 h-3.5 text-blue-400" />
+                      <span>Testar Bloqueio</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    <p className="text-xs text-zinc-300 leading-relaxed">
+                      Você pode definir <strong>a senha que você quiser</strong> (letras, números, símbolos ou palavras). Ela é utilizada tanto para o bloqueio de tela quanto para a criptografia de ponta a ponta AES-256 dos seus dados.
+                    </p>
+
+                    {!isChangingPin ? (
+                      <div className="flex items-center gap-3">
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            setIsChangingPin(true);
+                            setPinChangeError('');
+                            setPinChangeSuccess(false);
+                          }}
+                          className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 flex items-center gap-2 cursor-pointer"
+                        >
+                          <KeyRound className="w-4 h-4" />
+                          <span>Alterar Senha do Aplicativo</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <form onSubmit={handleChangePin} className="space-y-3 bg-zinc-950/70 p-4 rounded-2xl border border-zinc-800 animate-in fade-in max-w-md">
+                        <div className="text-xs font-bold text-blue-400 mb-1 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Definir Nova Senha de Segurança</span>
+                        </div>
+
+                        {/* Senha Atual */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-[11px] font-bold text-zinc-400">
+                              Senha Atual
+                            </label>
+                            <FieldShiftArrows 
+                              onMoveDown={() => shiftOrSwapFields(currentPinInput, setCurrentPinInput, newPinInput, setNewPinInput)}
+                              labelDown="Descer senha para o campo de baixo (Nova Senha)"
+                            />
+                          </div>
+                          <div className="relative">
+                            <input
+                              type={showCurrentPin ? 'text' : 'password'}
+                              placeholder="Digite sua senha atual"
+                              value={currentPinInput}
+                              onChange={e => setCurrentPinInput(e.target.value)}
+                              className="w-full bg-zinc-900 border border-zinc-700/80 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowCurrentPin(!showCurrentPin)}
+                              className="absolute inset-y-0 right-0 pr-3 flex items-center text-zinc-400 hover:text-white"
+                            >
+                              {showCurrentPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                             </button>
                           </div>
-                        </form>
-                      )}
+                        </div>
+
+                        {/* Divisor / Inversor entre Senha Atual e Nova Senha */}
+                        <FieldSwapDivider 
+                          onSwap={() => shiftOrSwapFields(currentPinInput, setCurrentPinInput, newPinInput, setNewPinInput)}
+                          label="Trocar entre Senha Atual e Nova Senha"
+                        />
+
+                        {/* Nova Senha */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-[11px] font-bold text-zinc-400">
+                              Nova Senha (a senha que você quiser)
+                            </label>
+                            <FieldShiftArrows 
+                              onMoveUp={() => shiftOrSwapFields(newPinInput, setNewPinInput, currentPinInput, setCurrentPinInput)}
+                              onMoveDown={() => shiftOrSwapFields(newPinInput, setNewPinInput, confirmPinInput, setConfirmPinInput)}
+                              labelUp="Subir senha para o campo de cima (Senha Atual)"
+                              labelDown="Descer senha para o campo de baixo (Confirmar Senha)"
+                            />
+                          </div>
+                          <div className="relative">
+                            <input
+                              type={showNewPinInput ? 'text' : 'password'}
+                              placeholder="Digite a nova senha desejada"
+                              value={newPinInput}
+                              onChange={e => setNewPinInput(e.target.value)}
+                              className="w-full bg-zinc-900 border border-zinc-700/80 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowNewPinInput(!showNewPinInput)}
+                              className="absolute inset-y-0 right-0 pr-3 flex items-center text-zinc-400 hover:text-white"
+                            >
+                              {showNewPinInput ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Divisor / Inversor entre Nova Senha e Confirmar Senha */}
+                        <FieldSwapDivider 
+                          onSwap={() => shiftOrSwapFields(newPinInput, setNewPinInput, confirmPinInput, setConfirmPinInput)}
+                          label="Trocar entre Nova Senha e Confirmar Senha"
+                        />
+
+                        {/* Confirmar Nova Senha */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-[11px] font-bold text-zinc-400">
+                              Confirmar Nova Senha
+                            </label>
+                            <FieldShiftArrows 
+                              onMoveUp={() => shiftOrSwapFields(confirmPinInput, setConfirmPinInput, newPinInput, setNewPinInput)}
+                              labelUp="Subir senha para o campo de cima (Nova Senha)"
+                            />
+                          </div>
+                          <div className="relative">
+                            <input
+                              type={showConfirmPinInput ? 'text' : 'password'}
+                              placeholder="Repita a nova senha"
+                              value={confirmPinInput}
+                              onChange={e => setConfirmPinInput(e.target.value)}
+                              className="w-full bg-zinc-900 border border-zinc-700/80 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowConfirmPinInput(!showConfirmPinInput)}
+                              className="absolute inset-y-0 right-0 pr-3 flex items-center text-zinc-400 hover:text-white"
+                            >
+                              {showConfirmPinInput ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {pinChangeError && (
+                          <div className="text-xs text-red-400 font-bold bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 shrink-0" />
+                            <span>{pinChangeError}</span>
+                          </div>
+                        )}
+                        
+                        {pinChangeSuccess && (
+                          <div className="text-xs text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-xl flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 shrink-0" />
+                            <span>Senha atualizada com sucesso! Seus dados foram protegidos com a nova senha.</span>
+                          </div>
+                        )}
+
+                        <div className="flex gap-2 pt-1">
+                          <button 
+                            type="button" 
+                            onClick={() => { 
+                              setIsChangingPin(false); 
+                              setPinChangeError(''); 
+                              setPinChangeSuccess(false); 
+                              setCurrentPinInput('');
+                              setNewPinInput('');
+                              setConfirmPinInput('');
+                            }} 
+                            className="flex-1 px-3 py-2 text-zinc-400 hover:text-zinc-100 text-xs font-semibold rounded-xl bg-zinc-900 hover:bg-zinc-800 transition-colors cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                          <button 
+                            type="submit" 
+                            className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-600/20 cursor-pointer"
+                          >
+                            Salvar Nova Senha
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                </div>
+
+                {/* Card de Bloqueio Automático */}
+                <div className="bg-zinc-900/50 shadow-xl border border-zinc-800/50 rounded-2xl p-6 mb-4">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400">
+                      <LockKeyhole className="w-6 h-6" />
                     </div>
+                    <div>
+                      <h3 className="text-base font-bold text-zinc-100">Bloqueio Automático por Inatividade</h3>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        Escolha quando o aplicativo deve solicitar a senha novamente.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { id: 'immediate', label: 'Ao Sair / Imediato', desc: 'Ao trocar de aba ou app' },
+                      { id: '1m', label: '1 Minuto', desc: '1 min sem tocar' },
+                      { id: '5m', label: '5 Minutos', desc: 'Recomendado' },
+                      { id: 'never', label: 'Apenas Manual', desc: 'Ao clicar em Bloquear' }
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => {
+                          setAutoLockSetting(opt.id);
+                          localStorage.setItem('auto_lock_time', opt.id);
+                        }}
+                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                          autoLockSetting === opt.id
+                            ? 'bg-blue-600/20 border-blue-500 text-white shadow-md shadow-blue-500/10'
+                            : 'bg-zinc-950/60 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="font-bold text-xs text-zinc-100 mb-0.5">{opt.label}</div>
+                        <div className="text-[10px] text-zinc-500">{opt.desc}</div>
+                      </button>
+                    ))}
                   </div>
                 </div>
 <div className="bg-zinc-900/50 shadow-xl border border-zinc-800/50 rounded-xl p-6 mb-4 space-y-6">
@@ -2158,22 +2480,29 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                       </div>
                     </div>
 
-                    {/* Card de Download do Ícone Otimizado (Solução para o erro de 256KB) */}
-                    <div className="bg-gradient-to-r from-amber-500/10 via-zinc-900 to-zinc-900 border border-amber-500/30 rounded-2xl p-6 relative overflow-hidden shadow-2xl mb-6">
+                    {/* Card de Download do Ícone Otimizado GKD Mobility */}
+                    <div className="bg-gradient-to-r from-blue-900/30 via-zinc-900 to-zinc-900 border border-blue-500/40 rounded-2xl p-6 relative overflow-hidden shadow-2xl mb-6">
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
                         <div className="flex items-start gap-4">
-                          <div className="w-20 h-20 rounded-2xl bg-white border-2 border-amber-500/50 p-1 flex items-center justify-center shrink-0 shadow-lg shadow-amber-500/10 overflow-hidden">
-                            <img src="/app-icon.svg" alt="Ícone GKD Mobility" className="w-full h-full object-contain" />
+                          <div 
+                            onClick={() => setShowBigIconLightbox(true)}
+                            className="w-20 h-20 rounded-2xl bg-slate-950 border-2 border-blue-500/50 p-1 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20 overflow-hidden cursor-pointer group hover:scale-105 hover:border-cyan-400 transition-all relative"
+                            title="Clique para ver o ícone em tamanho grande (512x512)"
+                          >
+                            <img src="/app-icon.png" alt="Ícone Oficial GKD Mobility" className="w-full h-full object-contain rounded-xl" referrerPolicy="no-referrer" />
+                            <div className="absolute inset-0 bg-blue-600/30 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
+                              <ZoomIn className="w-4 h-4 text-white drop-shadow" />
+                            </div>
                           </div>
                           <div>
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <h3 className="text-sm font-bold text-zinc-100">Ícone Oficial GKD Mobility (Cópia Fiel)</h3>
+                              <h3 className="text-sm font-bold text-zinc-100">Ícone Oficial GKD Mobility</h3>
                               <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold rounded-full">
-                                ~35 KB (Limite WebIntoApp: 256 KB)
+                                ~68 KB (Otimizado para WebIntoApp • Limite: 256 KB)
                               </span>
                             </div>
                             <p className="text-xs text-zinc-400 leading-relaxed max-w-xl">
-                              O ícone foi redesenhado fielmente com o <strong>cadeado dourado, o logotipo GKD com a pista/rodovia azul e a legenda MOBILITY</strong> em alta resolução, pesando apenas ~35 KB.
+                              Ícone oficial do <strong>GKD Mobility</strong> com o cadeado neon azul, senha com asteriscos, escudo de proteção e o logotipo GKD com rodovia estilizada e legenda MOBILITY em alta resolução 512x512.
                             </p>
                           </div>
                         </div>
@@ -2182,24 +2511,24 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                           <button
                             type="button"
                             onClick={handleDownloadOfficialIcon}
-                            className="px-4 py-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:from-amber-600 text-zinc-950 font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20"
+                            className="px-4 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 active:from-blue-700 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25"
                           >
                             {iconDownloadSuccess ? (
                               <>
-                                <Check className="w-4 h-4 text-zinc-950 stroke-[3]" />
+                                <Check className="w-4 h-4 text-emerald-300 stroke-[3]" />
                                 <span>Ícone Baixado!</span>
                               </>
                             ) : (
                               <>
                                 <Download className="w-4 h-4" />
-                                Baixar Ícone Fiel (35 KB)
+                                Baixar Ícone Oficial (68 KB)
                               </>
                             )}
                           </button>
 
                           <label className="px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-bold rounded-xl cursor-pointer border border-zinc-700 transition-all flex items-center justify-center gap-2">
                             <Upload className="w-4 h-4 text-blue-400" />
-                            {customIconSuccess ? 'Arquivo Compactado & Salvo!' : 'Compactar Minha Imagem Original'}
+                            {customIconSuccess ? 'Arquivo Compactado & Salvo!' : 'Otimizar Outra Imagem'}
                             <input
                               type="file"
                               accept="image/png, image/jpeg, image/webp"
@@ -2292,9 +2621,17 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
 
             {(activeTab !== 'settings' && activeTab !== 'help') && activeFolderId === null && (
               <>
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                   <h2 className="text-2xl font-light text-zinc-100 italic">Suas <span className="font-bold not-italic">Pastas</span></h2>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button 
+                      onClick={() => setShowPermissionsModal(true)}
+                      className="px-3 py-2 bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/40 text-cyan-300 shadow-md rounded text-xs font-bold transition-all flex items-center gap-1.5"
+                      title="Solicitar permissões do sistema (Câmera, Localização, Armazenamento, Sobrepor, Segundo plano, Microfone, Contatos, Notificações)"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                      PERMISSÕES (8)
+                    </button>
                     <button 
                       onClick={() => handleOpenRandomPasswordGenerator(null)}
                       className="px-3.5 py-2 bg-zinc-900 hover:bg-zinc-800 border border-blue-500/30 text-blue-400 shadow-md rounded text-xs font-bold transition-all flex items-center gap-1.5"
@@ -2819,9 +3156,17 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
             )}
 
             <div className="mb-3">
-              <label className="block text-xs font-extrabold text-zinc-200 uppercase mb-1 tracking-wider">
-                {activeTab === 'passwords' ? 'Login / Usuário' : 'Conteúdo / Detalhes'}
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">
+                  {activeTab === 'passwords' ? 'Login / Usuário' : 'Conteúdo / Detalhes'}
+                </label>
+                {activeTab === 'passwords' && (
+                  <FieldShiftArrows 
+                    onMoveDown={() => shiftOrSwapFields(newItemDetail, setNewItemDetail, newItemPassword, setNewItemPassword)}
+                    labelDown="Descer texto para o campo de baixo (Senha Principal)"
+                  />
+                )}
+              </div>
               <input 
                 type="text" 
                 value={newItemDetail}
@@ -2832,9 +3177,23 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
 
             {activeTab === 'passwords' && (
               <div className="mb-6 flex flex-col gap-3">
+                {/* Inversor Rápido entre Login e Senha */}
+                <FieldSwapDivider 
+                  onSwap={() => shiftOrSwapFields(newItemDetail, setNewItemDetail, newItemPassword, setNewItemPassword)}
+                  label="Inverter Login e Senha Principal"
+                />
+
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha Principal</label>
+                    <div className="flex items-center gap-2">
+                      <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha Principal</label>
+                      <FieldShiftArrows 
+                        onMoveUp={() => shiftOrSwapFields(newItemPassword, setNewItemPassword, newItemDetail, setNewItemDetail)}
+                        onMoveDown={() => shiftOrSwapFields(newItemPassword, setNewItemPassword, newItemAccessPassword, setNewItemAccessPassword)}
+                        labelUp="Subir senha para o campo de cima (Login / Usuário)"
+                        labelDown="Descer senha para o campo de baixo (Senha de Acesso / PIN)"
+                      />
+                    </div>
                     <button 
                       type="button" 
                       onClick={() => setNewItemPassword(generateRandomPasswordString('alphanumeric', 16, { upper: true, lower: true, numbers: true, symbols: true, avoidAmbiguous: false }))}
@@ -2852,7 +3211,15 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha de Acesso / PIN</label>
+                    <div className="flex items-center gap-2">
+                      <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha de Acesso / PIN</label>
+                      <FieldShiftArrows 
+                        onMoveUp={() => shiftOrSwapFields(newItemAccessPassword, setNewItemAccessPassword, newItemPassword, setNewItemPassword)}
+                        onMoveDown={() => shiftOrSwapFields(newItemAccessPassword, setNewItemAccessPassword, newItemTransactionPassword, setNewItemTransactionPassword)}
+                        labelUp="Subir senha para o campo de cima (Senha Principal)"
+                        labelDown="Descer senha para o campo de baixo (Senha de Transação)"
+                      />
+                    </div>
                     <button 
                       type="button" 
                       onClick={() => setNewItemAccessPassword(generateRandomPasswordString('numeric', 6, { upper: false, lower: false, numbers: true, symbols: false, avoidAmbiguous: false }))}
@@ -2870,7 +3237,15 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha de Transação</label>
+                    <div className="flex items-center gap-2">
+                      <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha de Transação</label>
+                      <FieldShiftArrows 
+                        onMoveUp={() => shiftOrSwapFields(newItemTransactionPassword, setNewItemTransactionPassword, newItemAccessPassword, setNewItemAccessPassword)}
+                        onMoveDown={() => shiftOrSwapFields(newItemTransactionPassword, setNewItemTransactionPassword, newItemAlphanumericPassword, setNewItemAlphanumericPassword)}
+                        labelUp="Subir senha para o campo de cima (Senha de Acesso / PIN)"
+                        labelDown="Descer senha para o campo de baixo (Senha Alfanumérica)"
+                      />
+                    </div>
                     <button 
                       type="button" 
                       onClick={() => setNewItemTransactionPassword(generateRandomPasswordString('numeric', 4, { upper: false, lower: false, numbers: true, symbols: false, avoidAmbiguous: false }))}
@@ -2888,7 +3263,13 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha Alfanumérica</label>
+                    <div className="flex items-center gap-2">
+                      <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha Alfanumérica</label>
+                      <FieldShiftArrows 
+                        onMoveUp={() => shiftOrSwapFields(newItemAlphanumericPassword, setNewItemAlphanumericPassword, newItemTransactionPassword, setNewItemTransactionPassword)}
+                        labelUp="Subir senha para o campo de cima (Senha de Transação)"
+                      />
+                    </div>
                     <button 
                       type="button" 
                       onClick={() => setNewItemAlphanumericPassword(generateRandomPasswordString('alphanumeric', 20, { upper: true, lower: true, numbers: true, symbols: true, avoidAmbiguous: false }))}
@@ -3048,9 +3429,17 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
             )}
 
             <div className="mb-3">
-              <label className="block text-xs font-extrabold text-zinc-200 uppercase mb-1 tracking-wider">
-                {editingItem.type === 'password' ? 'Login / Usuário' : 'Conteúdo / Detalhes'}
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">
+                  {editingItem.type === 'password' ? 'Login / Usuário' : 'Conteúdo / Detalhes'}
+                </label>
+                {editingItem.type === 'password' && (
+                  <FieldShiftArrows 
+                    onMoveDown={() => shiftOrSwapFields(editItemDetail, setEditItemDetail, editItemPassword, setEditItemPassword)}
+                    labelDown="Descer texto para o campo de baixo (Senha Principal)"
+                  />
+                )}
+              </div>
               <input 
                 type="text" 
                 value={editItemDetail}
@@ -3061,9 +3450,23 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
 
             {editingItem.type === 'password' && (
               <div className="mb-6 flex flex-col gap-3">
+                {/* Inversor Rápido entre Login e Senha */}
+                <FieldSwapDivider 
+                  onSwap={() => shiftOrSwapFields(editItemDetail, setEditItemDetail, editItemPassword, setEditItemPassword)}
+                  label="Inverter Login e Senha Principal"
+                />
+
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha Principal</label>
+                    <div className="flex items-center gap-2">
+                      <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha Principal</label>
+                      <FieldShiftArrows 
+                        onMoveUp={() => shiftOrSwapFields(editItemPassword, setEditItemPassword, editItemDetail, setEditItemDetail)}
+                        onMoveDown={() => shiftOrSwapFields(editItemPassword, setEditItemPassword, editItemAccessPassword, setEditItemAccessPassword)}
+                        labelUp="Subir senha para o campo de cima (Login / Usuário)"
+                        labelDown="Descer senha para o campo de baixo (Senha de Acesso / PIN)"
+                      />
+                    </div>
                     <button 
                       type="button" 
                       onClick={() => setEditItemPassword(generateRandomPasswordString('alphanumeric', 16, { upper: true, lower: true, numbers: true, symbols: true, avoidAmbiguous: false }))}
@@ -3081,7 +3484,15 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha de Acesso / PIN</label>
+                    <div className="flex items-center gap-2">
+                      <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha de Acesso / PIN</label>
+                      <FieldShiftArrows 
+                        onMoveUp={() => shiftOrSwapFields(editItemAccessPassword, setEditItemAccessPassword, editItemPassword, setEditItemPassword)}
+                        onMoveDown={() => shiftOrSwapFields(editItemAccessPassword, setEditItemAccessPassword, editItemTransactionPassword, setEditItemTransactionPassword)}
+                        labelUp="Subir senha para o campo de cima (Senha Principal)"
+                        labelDown="Descer senha para o campo de baixo (Senha de Transação)"
+                      />
+                    </div>
                     <button 
                       type="button" 
                       onClick={() => setEditItemAccessPassword(generateRandomPasswordString('numeric', 6, { upper: false, lower: false, numbers: true, symbols: false, avoidAmbiguous: false }))}
@@ -3099,7 +3510,15 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha de Transação</label>
+                    <div className="flex items-center gap-2">
+                      <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha de Transação</label>
+                      <FieldShiftArrows 
+                        onMoveUp={() => shiftOrSwapFields(editItemTransactionPassword, setEditItemTransactionPassword, editItemAccessPassword, setEditItemAccessPassword)}
+                        onMoveDown={() => shiftOrSwapFields(editItemTransactionPassword, setEditItemTransactionPassword, editItemAlphanumericPassword, setEditItemAlphanumericPassword)}
+                        labelUp="Subir senha para o campo de cima (Senha de Acesso / PIN)"
+                        labelDown="Descer senha para o campo de baixo (Senha Alfanumérica)"
+                      />
+                    </div>
                     <button 
                       type="button" 
                       onClick={() => setEditItemTransactionPassword(generateRandomPasswordString('numeric', 4, { upper: false, lower: false, numbers: true, symbols: false, avoidAmbiguous: false }))}
@@ -3117,7 +3536,13 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha Alfanumérica</label>
+                    <div className="flex items-center gap-2">
+                      <label className="block text-xs font-extrabold text-zinc-200 uppercase tracking-wider">Senha Alfanumérica</label>
+                      <FieldShiftArrows 
+                        onMoveUp={() => shiftOrSwapFields(editItemAlphanumericPassword, setEditItemAlphanumericPassword, editItemTransactionPassword, setEditItemTransactionPassword)}
+                        labelUp="Subir senha para o campo de cima (Senha de Transação)"
+                      />
+                    </div>
                     <button 
                       type="button" 
                       onClick={() => setEditItemAlphanumericPassword(generateRandomPasswordString('alphanumeric', 20, { upper: true, lower: true, numbers: true, symbols: true, avoidAmbiguous: false }))}
@@ -3522,100 +3947,289 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
         </div>
       )}
 
-      {/* Modal de Informações e Descrição do App (Ao clicar no Logo) */}
+      {/* Modal de Informações, Descrição, Discrição e Disciplina do App (Ao clicar no Ícone) */}
       {showAppInfoModal && (
         <div className="fixed inset-0 bg-black/85 backdrop-blur-xl z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-blue-500/30 p-6 sm:p-7 rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-start justify-between border-b border-zinc-800 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20 border border-blue-400/30">
-                  <ShieldCheck className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-zinc-100 font-extrabold text-lg">Confidencial</h3>
-                    <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 text-[10px] font-mono font-bold border border-blue-500/20">v2.4 Pro</span>
+          <div className="bg-zinc-900 border border-blue-500/30 p-5 sm:p-7 rounded-3xl max-w-xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            
+            {/* Cabeçalho do Modal com Ícone em Destaque Grande */}
+            <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4 border-b border-zinc-800 pb-5 bg-gradient-to-b from-blue-950/30 via-transparent to-transparent -mx-5 -mt-5 p-5 rounded-t-3xl border-t border-t-blue-500/20">
+              <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left w-full sm:w-auto">
+                {/* Ícone Grande e Clicável */}
+                <div 
+                  onClick={() => setShowBigIconLightbox(true)}
+                  className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden border-2 border-blue-500/50 shadow-xl shadow-blue-500/25 shrink-0 bg-slate-950 p-1 cursor-pointer group relative hover:scale-105 hover:border-cyan-400 transition-all duration-300"
+                  title="Clique para ver o ícone em tamanho gigante (512x512)"
+                >
+                  <img src="/app-icon.png" alt="GKD Mobility" className="w-full h-full object-contain rounded-xl" referrerPolicy="no-referrer" />
+                  <div className="absolute inset-0 bg-blue-950/70 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 rounded-xl">
+                    <Maximize2 className="w-6 h-6 text-cyan-300" />
+                    <span className="text-[9px] font-extrabold text-cyan-200 uppercase tracking-wider">Ampliar</span>
                   </div>
-                  <p className="text-xs text-zinc-400">Cofre Blindado & Gerenciador Inteligente de Senhas</p>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-center sm:justify-start gap-2 mb-1">
+                    <h3 className="text-zinc-100 font-extrabold text-xl">GKD Secreto</h3>
+                    <span className="px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 text-[10px] font-mono font-bold border border-blue-500/30">v2.5 Pro</span>
+                  </div>
+                  <p className="text-xs text-zinc-400 mb-2.5">GKD Mobility • Cofre Blindado & Gerenciador Inteligente</p>
+                  
+                  <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setShowBigIconLightbox(true)}
+                      className="px-2.5 py-1 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                      title="Ver ícone gigante em alta resolução (512x512)"
+                    >
+                      <ZoomIn className="w-3 h-3 text-cyan-400" />
+                      <span>Ícone Grande (512px)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDownloadOfficialIcon}
+                      className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                      title="Baixar imagem oficial em alta resolução"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Baixar PNG</span>
+                    </button>
+                  </div>
                 </div>
               </div>
+
               <button 
+                type="button"
                 onClick={() => setShowAppInfoModal(false)}
-                className="w-8 h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
+                className="w-8 h-8 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 self-end sm:self-start"
+                title="Fechar"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-4 text-xs text-zinc-300">
-              <p className="leading-relaxed bg-zinc-950/60 border border-zinc-800/80 p-3.5 rounded-xl text-zinc-300">
-                O <strong>Confidencial</strong> é um sistema completo de proteção e preenchimento de credenciais. Ele une a discrição de uma fachada simulada com recursos avançados de segurança cibernética e extensão para navegação.
-              </p>
+            {/* Abas: Descrição • Discrição • Disciplina */}
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-zinc-950/80 rounded-2xl border border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setInfoModalTab('descricao')}
+                className={`py-2 px-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
+                  infoModalTab === 'descricao'
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                }`}
+              >
+                <Info className="w-3.5 h-3.5" />
+                <span>Descrição</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInfoModalTab('discricao')}
+                className={`py-2 px-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
+                  infoModalTab === 'discricao'
+                    ? 'bg-amber-500 text-zinc-950 shadow-md shadow-amber-500/30'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                }`}
+              >
+                <Gamepad2 className="w-3.5 h-3.5" />
+                <span>Discrição</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setInfoModalTab('disciplina')}
+                className={`py-2 px-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
+                  infoModalTab === 'disciplina'
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Disciplina</span>
+              </button>
+            </div>
 
-              <div className="space-y-2.5">
-                <h4 className="text-[11px] font-extrabold text-blue-400 uppercase tracking-wider">Principais Recursos:</h4>
-                
-                <div className="grid grid-cols-1 gap-2.5">
-                  <div className="bg-zinc-950/40 border border-zinc-800/60 p-3 rounded-xl flex items-start gap-3">
-                    <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 mt-0.5">
-                      <Puzzle className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <strong className="text-zinc-100 block text-xs">Extensão & AutoFill Integrado</strong>
-                      <span className="text-zinc-400 text-[11px]">Leitura automática de senhas em sites e preenchimento em 1 clique em navegadores e apps.</span>
-                    </div>
-                  </div>
+            {/* Conteúdo Aba 1: Descrição */}
+            {infoModalTab === 'descricao' && (
+              <div className="space-y-4 text-xs text-zinc-300 animate-in fade-in duration-150">
+                <p className="leading-relaxed bg-zinc-950/60 border border-zinc-800/80 p-3.5 rounded-xl text-zinc-300">
+                  O <strong className="text-blue-400">GKD Secreto</strong> (GKD Mobility) é um cofre confidencial e gerenciador inteligente de alta segurança. Ele reúne proteção com criptografia de ponta a ponta (AES-256), extensão para navegação e captura silenciosa de intrusos.
+                </p>
 
-                  <div className="bg-zinc-950/40 border border-zinc-800/60 p-3 rounded-xl flex items-start gap-3">
-                    <div className="p-1.5 rounded-lg bg-red-500/10 text-red-400 mt-0.5">
-                      <Camera className="w-4 h-4" />
+                <div className="space-y-2.5">
+                  <h4 className="text-[11px] font-extrabold text-blue-400 uppercase tracking-wider">Principais Recursos:</h4>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div className="bg-zinc-950/40 border border-zinc-800/60 p-3 rounded-xl flex items-start gap-2.5">
+                      <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 mt-0.5 shrink-0">
+                        <Puzzle className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <strong className="text-zinc-100 block text-xs">Extensão & AutoFill</strong>
+                        <span className="text-zinc-400 text-[11px]">Leitura e preenchimento de senhas em sites com 1 clique no navegador.</span>
+                      </div>
                     </div>
-                    <div>
-                      <strong className="text-zinc-100 block text-xs">Foto Silenciosa de Intrusos</strong>
-                      <span className="text-zinc-400 text-[11px]">Registra fotos com a câmera frontal em tentativas de acesso incorretas com registro no histórico.</span>
-                    </div>
-                  </div>
 
-                  <div className="bg-zinc-950/40 border border-zinc-800/60 p-3 rounded-xl flex items-start gap-3">
-                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 mt-0.5">
-                      <Lock className="w-4 h-4" />
+                    <div className="bg-zinc-950/40 border border-zinc-800/60 p-3 rounded-xl flex items-start gap-2.5">
+                      <div className="p-1.5 rounded-lg bg-red-500/10 text-red-400 mt-0.5 shrink-0">
+                        <Camera className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <strong className="text-zinc-100 block text-xs">Fotos de Intrusos</strong>
+                        <span className="text-zinc-400 text-[11px]">Registra foto da câmera frontal em tentativas de acesso incorretas.</span>
+                      </div>
                     </div>
-                    <div>
-                      <strong className="text-zinc-100 block text-xs">Camuflagem & PIN Duplo</strong>
-                      <span className="text-zinc-400 text-[11px]">Aparência de app esportivo com PIN mestre e PIN falso para emergências e máxima privacidade.</span>
-                    </div>
-                  </div>
 
-                  <div className="bg-zinc-950/40 border border-zinc-800/60 p-3 rounded-xl flex items-start gap-3">
-                    <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400 mt-0.5">
-                      <Folder className="w-4 h-4" />
+                    <div className="bg-zinc-950/40 border border-zinc-800/60 p-3 rounded-xl flex items-start gap-2.5">
+                      <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 mt-0.5 shrink-0">
+                        <LockKeyhole className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <strong className="text-zinc-100 block text-xs">Camuflagem & PIN</strong>
+                        <span className="text-zinc-400 text-[11px]">Aparência discreta e modo camuflado para proteção contra coação.</span>
+                      </div>
                     </div>
-                    <div>
-                      <strong className="text-zinc-100 block text-xs">Pastas Personalizadas com Senha</strong>
-                      <span className="text-zinc-400 text-[11px]">Organize seus itens em pastas protegidas individualmente com senhas exclusivas.</span>
+
+                    <div className="bg-zinc-950/40 border border-zinc-800/60 p-3 rounded-xl flex items-start gap-2.5">
+                      <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400 mt-0.5 shrink-0">
+                        <Folder className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <strong className="text-zinc-100 block text-xs">Pastas Protegidas</strong>
+                        <span className="text-zinc-400 text-[11px]">Organize seus itens em pastas com proteção individual por senha.</span>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            <div className="pt-2 border-t border-zinc-800 flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAppInfoModal(false);
-                  setActiveTab('settings');
-                  setSettingsSubTab('extension');
-                }}
-                className="px-4 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-2"
-              >
-                <Puzzle className="w-3.5 h-3.5" />
-                Abrir Extensor
-              </button>
+            {/* Conteúdo Aba 2: Discrição */}
+            {infoModalTab === 'discricao' && (
+              <div className="space-y-4 text-xs text-zinc-300 animate-in fade-in duration-150">
+                <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl space-y-2">
+                  <div className="flex items-center gap-2 text-amber-400 font-extrabold text-sm">
+                    <Gamepad2 className="w-5 h-5" />
+                    <span>Modo Discrição & Disfarce Anti-Coação</span>
+                  </div>
+                  <p className="text-zinc-300 text-xs leading-relaxed">
+                    O <strong>Modo de Discrição</strong> oculta todo o cofre de senhas imediatamente, substituindo a interface por um jogo retrô comum (<em>Retro Galaxy</em>). Nenhuma senha, documento ou rastro confidencial fica visível na tela.
+                  </p>
+                </div>
+
+                <div className="bg-zinc-950/60 border border-zinc-800/80 p-4 rounded-2xl space-y-3">
+                  <h4 className="text-[11px] font-extrabold text-zinc-200 uppercase tracking-wider flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    Como Funciona o Disfarce:
+                  </h4>
+                  <ul className="space-y-2 text-zinc-400 text-[11px] leading-relaxed">
+                    <li className="flex items-start gap-2">
+                      <span className="text-amber-400 font-bold">•</span>
+                      <span><strong>Ativação Rápida:</strong> Toque no botão abaixo para camuflar o aplicativo instantaneamente se alguém estiver por perto.</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="text-amber-400 font-bold">•</span>
+                      <span><strong>Como Retornar ao Cofre:</strong> Na tela do jogo, toque no botão discreto <strong>"🔒 GKD • Voltar ao Cofre"</strong> no canto inferior ou dê <strong>3 toques</strong> rápidos no número de versão no canto superior esquerdo.</span>
+                    </li>
+                  </ul>
+
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowAppInfoModal(false);
+                        setIsDisguiseActive(true);
+                      }}
+                      className="w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 active:from-amber-600 text-zinc-950 font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 shadow-xl shadow-amber-500/20 cursor-pointer"
+                    >
+                      <Gamepad2 className="w-4 h-4 stroke-[2.5]" />
+                      <span>Ativar Modo Discrição Agora (Camuflar Tela)</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Conteúdo Aba 3: Disciplina */}
+            {infoModalTab === 'disciplina' && (
+              <div className="space-y-3.5 text-xs text-zinc-300 animate-in fade-in duration-150">
+                <div className="bg-emerald-500/10 border border-emerald-500/30 p-3.5 rounded-2xl">
+                  <h4 className="text-emerald-400 font-extrabold text-xs flex items-center gap-2 mb-1">
+                    <ShieldCheck className="w-4 h-4" />
+                    Protocolo & Disciplina de Segurança Cibernética
+                  </h4>
+                  <p className="text-[11px] text-zinc-300 leading-relaxed">
+                    Siga rigorosamente as 4 regras de disciplina do cofre para manter seus dados 100% blindados:
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2.5">
+                  <div className="bg-zinc-950/60 border border-zinc-800 p-3 rounded-xl space-y-1">
+                    <span className="font-extrabold text-zinc-200 text-xs flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center text-[10px]">1</span>
+                      Disciplina de Credenciais Fortes
+                    </span>
+                    <p className="text-zinc-400 text-[11px]">Nunca reutilize o mesmo PIN mestre em outros serviços. Gere senhas aleatórias com mais de 12 caracteres usando o gerador embutido.</p>
+                  </div>
+
+                  <div className="bg-zinc-950/60 border border-zinc-800 p-3 rounded-xl space-y-1">
+                    <span className="font-extrabold text-zinc-200 text-xs flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-[10px]">2</span>
+                      Disciplina em Ambientes Públicos
+                    </span>
+                    <p className="text-zinc-400 text-[11px]">Ao usar o cofre em transporte ou locais públicos, ative o Modo Discrição para evitar visualização indevida por cima do ombro.</p>
+                  </div>
+
+                  <div className="bg-zinc-950/60 border border-zinc-800 p-3 rounded-xl space-y-1">
+                    <span className="font-extrabold text-zinc-200 text-xs flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center text-[10px]">3</span>
+                      Disciplina de Auditoria e Intrusos
+                    </span>
+                    <p className="text-zinc-400 text-[11px]">Consulte semanalmente o Histórico de Tentativas para checar fotos de quem tentou destravar seu aparelho indevidamente.</p>
+                  </div>
+
+                  <div className="bg-zinc-950/60 border border-zinc-800 p-3 rounded-xl space-y-1">
+                    <span className="font-extrabold text-zinc-200 text-xs flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center text-[10px]">4</span>
+                      Disciplina de Sincronização & Backup
+                    </span>
+                    <p className="text-zinc-400 text-[11px]">Certifique-se de que o status do Banco de Dados esteja sincronizado antes de formatar ou alternar de dispositivo.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Rodapé de Ações */}
+            <div className="pt-3 border-t border-zinc-800 flex items-center justify-between gap-2.5 flex-wrap">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAppInfoModal(false);
+                    setIsDisguiseActive(true);
+                  }}
+                  className="px-3.5 py-2.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Gamepad2 className="w-3.5 h-3.5" />
+                  <span>Ativar Discrição</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAppInfoModal(false);
+                    setActiveTab('settings');
+                    setSettingsSubTab('extension');
+                  }}
+                  className="px-3.5 py-2.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/30 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Puzzle className="w-3.5 h-3.5" />
+                  <span>Abrir Extensor</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setShowAppInfoModal(false)}
-                className="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold transition-colors"
+                className="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold transition-colors cursor-pointer"
               >
                 Fechar
               </button>
@@ -4096,6 +4710,66 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                 className="bg-blue-600 h-full transition-all duration-300 rounded-full"
                 style={{ width: `${Math.round((uploadProgress.current / uploadProgress.total) * 100)}%` }}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Lightbox de Ícone em Tamanho Grande (512x512) */}
+      {showBigIconLightbox && (
+        <div 
+          className="fixed inset-0 bg-black/90 backdrop-blur-2xl z-[70] flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setShowBigIconLightbox(false)}
+        >
+          <div 
+            className="bg-zinc-900 border border-blue-500/50 p-6 sm:p-8 rounded-3xl max-w-sm sm:max-w-md w-full shadow-2xl flex flex-col items-center text-center relative animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              type="button"
+              onClick={() => setShowBigIconLightbox(false)}
+              className="absolute top-4 right-4 w-9 h-9 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              title="Fechar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/40 text-xs font-bold uppercase tracking-wider mb-4 flex items-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+              Ícone Oficial GKD Mobility
+            </span>
+
+            {/* Ícone Gigante em Alta Resolução */}
+            <div className="w-60 h-60 sm:w-72 sm:h-72 rounded-3xl overflow-hidden border-2 border-blue-400/70 shadow-[0_0_60px_rgba(59,130,246,0.4)] bg-slate-950 p-2 relative mb-4">
+              <img 
+                src="/app-icon.png" 
+                alt="Ícone Oficial GKD Mobility" 
+                className="w-full h-full object-contain rounded-2xl drop-shadow-2xl" 
+                referrerPolicy="no-referrer" 
+              />
+            </div>
+
+            <h3 className="text-xl font-bold text-white mb-1">GKD Secreto Pro</h3>
+            <p className="text-xs text-zinc-400 max-w-xs mb-5">
+              Resolução 512x512 em alta definição com cadeado neon azul e escudo de proteção.
+            </p>
+
+            <div className="flex items-center gap-3 w-full">
+              <button
+                type="button"
+                onClick={handleDownloadOfficialIcon}
+                className="flex-1 py-3 px-4 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 active:from-blue-700 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>{iconDownloadSuccess ? 'Ícone Baixado!' : 'Baixar PNG (68 KB)'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowBigIconLightbox(false)}
+                className="py-3 px-5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Fechar
+              </button>
             </div>
           </div>
         </div>

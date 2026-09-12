@@ -1,7 +1,7 @@
 {
   "name": "GKD Secreto - Cofre Seguro",
   "short_name": "GKD Secreto",
-  "description": "Cofre confidencial de senhas e documentos com autenticação dupla (Facial / Digital / Senha) e modo de emergência disfarçado.",
+  "description": "Cofre confidencial de senhas e documentos com autenticação dupla e modo de emergência disfarçado.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#09090b",
@@ -9,8 +9,20 @@
   "orientation": "portrait",
   "icons": [
     {
+      "src": "/app-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
       "src": "/icon.svg",
-      "sizes": "192x192 512x512",
+      "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     }

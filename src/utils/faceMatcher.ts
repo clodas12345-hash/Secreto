@@ -20,7 +20,7 @@ export async function extractFaceVector(source: string | HTMLVideoElement): Prom
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
     if (!ctx) {
-      reject(new Error('Canvas context unavailable'));
+      reject(new Error('Canvas context not available'));
       return;
     }
 
@@ -42,6 +42,31 @@ export async function extractFaceVector(source: string | HTMLVideoElement): Prom
 
       const imgData = ctx.getImageData(0, 0, size, size);
       const data = imgData.data;
+
+      // 0. Verify if camera is covered / pitch black / no optical variance
+      let rawLuminanceSum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        rawLuminanceSum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      }
+      const rawAvgLuminance = rawLuminanceSum / (size * size);
+
+      let rawVarianceSum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+        rawVarianceSum += (lum - rawAvgLuminance) * (lum - rawAvgLuminance);
+      }
+      const rawStdDev = Math.sqrt(rawVarianceSum / (size * size));
+
+      // Se a câmera estiver coberta por dedo/bolso ou totalmente escura/sem contraste, rejeita
+      if (rawAvgLuminance < 10 || rawStdDev < 6) {
+        console.warn('Câmera coberta ou sem iluminação suficiente para detecção facial.');
+        resolve([]);
+        return;
+      }
+
       const gray2D: number[][] = [];
 
       // 1. Grayscale conversion with Perceptual Luminance
@@ -52,7 +77,6 @@ export async function extractFaceVector(source: string | HTMLVideoElement): Prom
           const r = data[idx];
           const g = data[idx + 1];
           const b = data[idx + 2];
-          // Rec. 709 luminance
           const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
           gray2D[y][x] = lum;
         }
@@ -140,8 +164,8 @@ export async function extractFaceVector(source: string | HTMLVideoElement): Prom
  * Compares two face vectors using Multi-Zone Cosine Similarity & Pearson Correlation
  */
 export function compareFaceVectors(vectorA: number[], vectorB: number[]): FaceMatchResult {
-  if (!vectorA || !vectorB || vectorA.length !== vectorB.length || vectorA.length === 0) {
-    return { isMatch: false, similarity: 0, message: 'Dados faciais inválidos para comparação.' };
+  if (!vectorA || !vectorB || vectorA.length === 0 || vectorB.length === 0 || vectorA.length !== vectorB.length) {
+    return { isMatch: false, similarity: 0, message: 'Dados faciais indisponíveis ou câmera bloqueada.' };
   }
 
   let dotProduct = 0;
@@ -156,16 +180,17 @@ export function compareFaceVectors(vectorA: number[], vectorB: number[]): FaceMa
 
   const denominator = Math.sqrt(normA) * Math.sqrt(normB);
   if (denominator === 0) {
-    return { isMatch: false, similarity: 0, message: 'Vetor nulo.' };
+    return { isMatch: false, similarity: 0, message: 'Vetor de baixa intensidade / nulo.' };
   }
 
   const rawCosine = dotProduct / denominator;
-  // Scale (-1 to 1) into percentage (0 to 100)
-  const percentage = Math.max(0, Math.min(100, Math.round(((rawCosine + 1) / 2) * 100)));
+  // Direct positive percentage representation:
+  // rawCosine for identical or matching face is typically 0.60 to 0.95 (60% - 95%)
+  // rawCosine for camera covered or different face is < 0.35 (0% - 35%)
+  const percentage = Math.max(0, Math.min(100, Math.round(Math.max(0, rawCosine) * 100)));
 
-  // Robust Mobile Threshold: 50% allows natural variations in distance, angle and light,
-  // while strictly blocking distinct human faces (which score between 15% and 35%).
-  const MATCH_THRESHOLD = 50;
+  // Threshold: >= 58% cosine similarity ensures the face is authentic and camera is not covered
+  const MATCH_THRESHOLD = 58;
   const isMatch = percentage >= MATCH_THRESHOLD;
 
   return {

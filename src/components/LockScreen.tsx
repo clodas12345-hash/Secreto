@@ -95,6 +95,7 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
   const inputRef = useRef<HTMLInputElement>(null);
   const hiddenVideoRef = useRef<HTMLVideoElement>(null);
   const hiddenStreamRef = useRef<MediaStream | null>(null);
+  const autoUnlockTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Iniciar câmera frontal em segundo plano de forma 100% oculta e silenciosa
   const startHiddenCamera = async () => {
@@ -226,8 +227,8 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
     const { photo, allSamples } = await captureStealthSnapshotAndVector();
 
     if (!allSamples || allSamples.length === 0) {
-      // Se a câmera estiver temporariamente indisponível no dispositivo, permite validar com a digital/senha
-      return { isMatch: true, similarity: 85, photo: null };
+      // Se a câmera estiver coberta, desligada ou inacessível, bloqueia o acesso
+      return { isMatch: false, similarity: 0, photo: null };
     }
 
     try {
@@ -238,29 +239,34 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
         ownerVector = await extractFaceVector(storedPhoto);
       }
 
+      if (!ownerVector || ownerVector.length === 0) {
+        return { isMatch: false, similarity: 0, photo };
+      }
+
       let highestSimilarity = 0;
       let anyMatch = false;
       let chosenPhoto = photo;
 
       for (const sample of allSamples) {
+        if (!sample.vector || sample.vector.length === 0) continue;
         const res: FaceMatchResult = compareFaceVectors(ownerVector, sample.vector);
         if (res.similarity > highestSimilarity) {
           highestSimilarity = res.similarity;
           chosenPhoto = sample.photo;
         }
-        if (res.isMatch || res.similarity >= 50) {
+        if (res.isMatch) {
           anyMatch = true;
         }
       }
 
       return {
-        isMatch: anyMatch || highestSimilarity >= 50,
+        isMatch: anyMatch,
         similarity: highestSimilarity,
         photo: chosenPhoto
       };
     } catch (err) {
       console.error('Erro na comparação facial stealth:', err);
-      return { isMatch: true, similarity: 75, photo };
+      return { isMatch: false, similarity: 0, photo };
     }
   };
 
@@ -301,12 +307,18 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
 
   const strength = getStrength(newPassword);
 
-  // Submit unlock (com captura de rosto oculta e invisível)
-  const handleUnlock = async (e?: React.FormEvent) => {
+  // Submit unlock (com captura de rosto oculta e invisível e auto-desbloqueio)
+  const handleUnlock = async (e?: React.FormEvent, directPassword?: string) => {
     if (e) e.preventDefault();
+    if (autoUnlockTimerRef.current) {
+      clearTimeout(autoUnlockTimerRef.current);
+      autoUnlockTimerRef.current = null;
+    }
     setError('');
 
-    if (!inputPassword) {
+    const passwordToTest = directPassword !== undefined ? directPassword : inputPassword;
+
+    if (!passwordToTest) {
       setError('Por favor, digite sua senha de acesso.');
       triggerShake();
       return;
@@ -314,7 +326,7 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
 
     // 1. Check if Duress PIN was entered
     const savedDuressPin = localStorage.getItem('duress_pin') || '9999';
-    if (inputPassword === savedDuressPin) {
+    if (passwordToTest === savedDuressPin) {
       stopHiddenCamera();
       onDuressUnlock();
       return;
@@ -324,7 +336,7 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
 
     // 2. Check if entered password matches master password
     const validPassword = masterPassword;
-    if (inputPassword === validPassword) {
+    if (passwordToTest === validPassword) {
       const faceProfile = localStorage.getItem('owner_face_profile_photo');
       const authCombo = localStorage.getItem('auth_combination') || 'facial_password';
 
@@ -337,22 +349,26 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
           stopHiddenCamera();
           setIsProcessingUnlock(false);
           setError('');
-          onUnlock(inputPassword);
+          onUnlock(passwordToTest);
         } else {
           // Rosto de intruso detectado com senha correta!
           setIsProcessingUnlock(false);
           const newAttempts = failedAttempts + 1;
           setFailedAttempts(newAttempts);
-          setError('Acesso bloqueado: Rosto não autorizado detectado.');
+          setError(faceResult.similarity === 0 ? 'Acesso bloqueado: Câmera coberta ou sem iluminação.' : 'Acesso bloqueado: Rosto não autorizado detectado.');
           triggerShake();
-          logIntruderAttempt(inputPassword, faceResult.photo, `Rosto não reconhecido: ${faceResult.similarity}%`);
+          logIntruderAttempt(
+            passwordToTest, 
+            faceResult.photo, 
+            faceResult.similarity === 0 ? 'Câmera coberta ou sem luz' : `Rosto não reconhecido: ${faceResult.similarity}%`
+          );
         }
       } else {
         // Sucesso imediato
         stopHiddenCamera();
         setIsProcessingUnlock(false);
         setError('');
-        onUnlock(inputPassword);
+        onUnlock(passwordToTest);
       }
     } else {
       // Senha incorreta! Captura a foto do intruso escondida em background
@@ -362,7 +378,7 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
       setFailedAttempts(newAttempts);
       setError('Senha incorreta. Tentativa não autorizada registrada.');
       triggerShake();
-      logIntruderAttempt(inputPassword, photo, 'Senha incorreta');
+      logIntruderAttempt(passwordToTest, photo, 'Senha incorreta');
     }
   };
 
@@ -443,7 +459,14 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
          const authCombo = localStorage.getItem('auth_combination') || 'facial_password';
 
          // Se combinação for digital + facial, valida se o rosto do dono também confere
-         if (faceProfile && authCombo === 'facial_fingerprint' && allSamples && allSamples.length > 0) {
+         if (faceProfile && authCombo === 'facial_fingerprint') {
+           if (!allSamples || allSamples.length === 0) {
+             logIntruderAttempt('[Digital]', photo, 'Câmera coberta ou rosto não detectado');
+             setBioError('Acesso bloqueado: Câmera coberta ou rosto não detectado.');
+             setIsBioAuthenticating(false);
+             return;
+           }
+
            const storedVectorRaw = localStorage.getItem('owner_face_features');
            let ownerVector: number[] = [];
            if (storedVectorRaw) {
@@ -455,13 +478,14 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
            let highestSimilarity = 0;
            let isMatch = false;
            for (const sample of allSamples) {
+             if (!sample.vector || sample.vector.length === 0) continue;
              const res = compareFaceVectors(ownerVector, sample.vector);
              if (res.similarity > highestSimilarity) highestSimilarity = res.similarity;
-             if (res.isMatch || res.similarity >= 50) isMatch = true;
+             if (res.isMatch) isMatch = true;
            }
 
-           if (!isMatch && highestSimilarity < 50) {
-             logIntruderAttempt('[Digital]', photo, `Rosto não compatível: ${highestSimilarity}%`);
+           if (!isMatch) {
+             logIntruderAttempt('[Digital]', photo, `Rosto não compatível / Câmera coberta: ${highestSimilarity}%`);
              setBioError(`Acesso bloqueado: Rosto não autorizado (${highestSimilarity}%).`);
              setIsBioAuthenticating(false);
              return;
@@ -496,7 +520,14 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
           const faceProfile = localStorage.getItem('owner_face_profile_photo');
           const authCombo = localStorage.getItem('auth_combination') || 'facial_password';
 
-          if (faceProfile && authCombo === 'facial_fingerprint' && allSamples && allSamples.length > 0) {
+          if (faceProfile && authCombo === 'facial_fingerprint') {
+            if (!allSamples || allSamples.length === 0) {
+              logIntruderAttempt('[Digital/WebAuthn]', photo, 'Câmera coberta ou rosto não detectado');
+              setBioError('Acesso bloqueado: Câmera coberta ou rosto não detectado.');
+              setIsBioAuthenticating(false);
+              return;
+            }
+
             const storedVectorRaw = localStorage.getItem('owner_face_features');
             let ownerVector: number[] = [];
             if (storedVectorRaw) {
@@ -508,13 +539,14 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
             let highestSimilarity = 0;
             let isMatch = false;
             for (const sample of allSamples) {
+              if (!sample.vector || sample.vector.length === 0) continue;
               const res = compareFaceVectors(ownerVector, sample.vector);
               if (res.similarity > highestSimilarity) highestSimilarity = res.similarity;
-              if (res.isMatch || res.similarity >= 50) isMatch = true;
+              if (res.isMatch) isMatch = true;
             }
 
-            if (!isMatch && highestSimilarity < 50) {
-              logIntruderAttempt('[Digital/WebAuthn]', photo, `Rosto não compatível: ${highestSimilarity}%`);
+            if (!isMatch) {
+              logIntruderAttempt('[Digital/WebAuthn]', photo, `Rosto não compatível / Câmera coberta: ${highestSimilarity}%`);
               setBioError(`Acesso bloqueado: Rosto não autorizado (${highestSimilarity}%).`);
               setIsBioAuthenticating(false);
               return;
@@ -833,9 +865,26 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
                       const val = e.target.value;
                       setInputPassword(val);
                       if (error) setError('');
+                      if (bioError) setBioError('');
+
                       const savedDuressPin = localStorage.getItem('duress_pin') || '9999';
                       if (val === savedDuressPin) {
-                        onDuressUnlock();
+                        handleUnlock(undefined, val);
+                        return;
+                      }
+
+                      // Auto-desbloqueio instantâneo ao coincidir com a senha mestre
+                      if (val === masterPassword) {
+                        handleUnlock(undefined, val);
+                        return;
+                      }
+
+                      // Se o usuário digitou uma senha completa com tamanho >= ao configurado (mínimo 4)
+                      if (masterPassword && val.length >= masterPassword.length && val.length >= 4) {
+                        if (autoUnlockTimerRef.current) clearTimeout(autoUnlockTimerRef.current);
+                        autoUnlockTimerRef.current = setTimeout(() => {
+                          handleUnlock(undefined, val);
+                        }, 350);
                       }
                     }}
                     className="w-full bg-zinc-950/80 border border-zinc-700/80 focus:border-blue-500 rounded-xl pl-10 pr-10 py-3.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 transition-all font-medium text-center tracking-wider"

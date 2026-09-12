@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { NativeBiometric } from '@capgo/capacitor-native-biometric';
-import FaceBiometricScanner from './FaceBiometricScanner';
+import { Camera as CapCamera } from '@capacitor/camera';
+import { 
+  extractFaceVector, 
+  compareFaceVectors, 
+  captureVideoFrameBase64,
+  FaceMatchResult 
+} from '../utils/faceMatcher';
 import { 
   LockKeyhole, 
   KeyRound, 
@@ -78,13 +84,168 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
   });
   const [isBioAuthenticating, setIsBioAuthenticating] = useState(false);
   const [bioError, setBioError] = useState('');
+  const [isProcessingUnlock, setIsProcessingUnlock] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const hiddenVideoRef = useRef<HTMLVideoElement>(null);
+  const hiddenStreamRef = useRef<MediaStream | null>(null);
+
+  // Iniciar câmera frontal em segundo plano de forma 100% oculta e silenciosa
+  const startHiddenCamera = async () => {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        try {
+          await CapCamera.requestPermissions({ permissions: ['camera'] });
+        } catch (e) {
+          console.warn('Capacitor camera background request notice:', e);
+        }
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        return;
+      }
+
+      if (hiddenStreamRef.current) {
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } },
+        audio: false
+      });
+
+      hiddenStreamRef.current = stream;
+      if (hiddenVideoRef.current) {
+        hiddenVideoRef.current.srcObject = stream;
+        hiddenVideoRef.current.setAttribute('playsinline', 'true');
+        hiddenVideoRef.current.muted = true;
+        await hiddenVideoRef.current.play();
+      }
+    } catch (err) {
+      console.warn('Câmera oculta em background não inicializada no momento:', err);
+    }
+  };
+
+  const stopHiddenCamera = () => {
+    if (hiddenStreamRef.current) {
+      hiddenStreamRef.current.getTracks().forEach(t => t.stop());
+      hiddenStreamRef.current = null;
+    }
+  };
 
   useEffect(() => {
     // Focus input on load
     inputRef.current?.focus();
-  }, [isFirstSetup]);
+
+    // Se já configurou o cofre, inicia a câmera oculta para captura invisível instantânea
+    if (!isFirstSetup) {
+      startHiddenCamera();
+
+      // Se a combinação for Digital + Facial, dispara a digital do Android imediatamente (instantânea)
+      const authCombo = localStorage.getItem('auth_combination') || 'facial_password';
+      if (authCombo === 'facial_fingerprint' && hasBiometry) {
+        const timer = setTimeout(() => {
+          handleBiometricUnlock();
+        }, 250);
+        return () => clearTimeout(timer);
+      }
+    }
+
+    return () => {
+      stopHiddenCamera();
+    };
+  }, [isFirstSetup, hasBiometry]);
+
+  // Captura instantânea e silenciosa de foto e extração de vetor facial
+  const captureStealthSnapshotAndVector = async (): Promise<{ photo: string | null; vector: number[] | null }> => {
+    try {
+      // 1. Tenta pegar do stream oculto já em execução
+      if (hiddenVideoRef.current && hiddenVideoRef.current.readyState >= 2) {
+        const photo = captureVideoFrameBase64(hiddenVideoRef.current);
+        const vector = await extractFaceVector(hiddenVideoRef.current);
+        return { photo, vector };
+      }
+
+      // 2. Se o stream oculto não estiver pronto, abre rapidamente um stream silencioso
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const tempStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 640 } },
+          audio: false
+        });
+        const tempVideo = document.createElement('video');
+        tempVideo.srcObject = tempStream;
+        tempVideo.setAttribute('playsinline', 'true');
+        tempVideo.muted = true;
+        await tempVideo.play();
+        await new Promise(r => setTimeout(r, 200));
+
+        const photo = captureVideoFrameBase64(tempVideo);
+        const vector = await extractFaceVector(tempVideo);
+        tempStream.getTracks().forEach(t => t.stop());
+        return { photo, vector };
+      }
+    } catch (err) {
+      console.warn('Falha na captura stealth da câmera:', err);
+    }
+    return { photo: null, vector: null };
+  };
+
+  // Comparação biométrica silenciosa em segundo plano
+  const verifyStealthFace = async (): Promise<{ isMatch: boolean; similarity: number; photo: string | null }> => {
+    const storedVectorRaw = localStorage.getItem('owner_face_features');
+    const storedPhoto = localStorage.getItem('owner_face_profile_photo');
+
+    if (!storedVectorRaw && !storedPhoto) {
+      // Nenhum rosto cadastrado -> libera direto
+      return { isMatch: true, similarity: 100, photo: null };
+    }
+
+    const { photo, vector } = await captureStealthSnapshotAndVector();
+
+    if (!photo || !vector) {
+      // Se a câmera estiver indisponível no momento, permite validar apenas com a senha/digital correta
+      return { isMatch: true, similarity: 80, photo: null };
+    }
+
+    try {
+      let ownerVector: number[] = [];
+      if (storedVectorRaw) {
+        ownerVector = JSON.parse(storedVectorRaw);
+      } else if (storedPhoto) {
+        ownerVector = await extractFaceVector(storedPhoto);
+      }
+
+      const matchResult: FaceMatchResult = compareFaceVectors(ownerVector, vector);
+      return {
+        isMatch: matchResult.isMatch,
+        similarity: matchResult.similarity,
+        photo
+      };
+    } catch (err) {
+      console.error('Erro na comparação facial stealth:', err);
+      return { isMatch: true, similarity: 75, photo };
+    }
+  };
+
+  // Log silencioso de intruso com foto capturada
+  const logIntruderAttempt = (wrongPin: string, intruderPhoto: string | null, reason?: string) => {
+    try {
+      const existingAttempts: AccessAttempt[] = JSON.parse(
+        localStorage.getItem('access_attempts') || '[]'
+      );
+      const newAttempt: AccessAttempt = {
+        id: 'att_' + Date.now(),
+        timestamp: new Date().toISOString(),
+        pinUsed: reason ? `${wrongPin} (${reason})` : wrongPin,
+        success: false,
+        photoBase64: intruderPhoto
+      };
+      const updated = [newAttempt, ...existingAttempts].slice(0, 50);
+      localStorage.setItem('access_attempts', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Erro ao registrar log de intruso:', e);
+    }
+  };
 
   // Evaluate password strength
   const getStrength = (pass: string) => {
@@ -103,76 +264,7 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
 
   const strength = getStrength(newPassword);
 
-  // Silent intruder capture function using front camera
-  const captureIntruderPhoto = async (wrongInput: string) => {
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Camera não suportada');
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
-        audio: false
-      });
-
-      const video = document.createElement('video');
-      video.srcObject = stream;
-      video.setAttribute('playsinline', 'true');
-      video.muted = true;
-      await video.play();
-
-      // Small delay for camera auto-focus/exposure
-      await new Promise((resolve) => setTimeout(resolve, 400));
-
-      const canvas = document.createElement('canvas');
-      const MAX_WIDTH = 480;
-      let w = video.videoWidth || 640;
-      let h = video.videoHeight || 480;
-      if (w > MAX_WIDTH) {
-        h = Math.round((h * MAX_WIDTH) / w);
-        w = MAX_WIDTH;
-      }
-      canvas.width = w;
-      canvas.height = h;
-
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, w, h);
-        const photoData = canvas.toDataURL('image/jpeg', 0.5);
-
-        const existingAttempts: AccessAttempt[] = JSON.parse(
-          localStorage.getItem('access_attempts') || '[]'
-        );
-        const newAttempt: AccessAttempt = {
-          id: Date.now().toString(),
-          timestamp: new Date().toISOString(),
-          pinUsed: wrongInput,
-          success: false,
-          photoBase64: photoData
-        };
-        const updated = [newAttempt, ...existingAttempts].slice(0, 50);
-        localStorage.setItem('access_attempts', JSON.stringify(updated));
-      }
-
-      stream.getTracks().forEach((track) => track.stop());
-    } catch (err) {
-      // Fallback: log attempt without photo if camera is blocked/denied
-      const existingAttempts: AccessAttempt[] = JSON.parse(
-        localStorage.getItem('access_attempts') || '[]'
-      );
-      const newAttempt: AccessAttempt = {
-        id: Date.now().toString(),
-        timestamp: new Date().toISOString(),
-        pinUsed: wrongInput,
-        success: false,
-        photoBase64: null
-      };
-      const updated = [newAttempt, ...existingAttempts].slice(0, 50);
-      localStorage.setItem('access_attempts', JSON.stringify(updated));
-    }
-  };
-
-  // Submit unlock
+  // Submit unlock (com captura de rosto oculta e invisível)
   const handleUnlock = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setError('');
@@ -186,9 +278,12 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
     // 1. Check if Duress PIN was entered
     const savedDuressPin = localStorage.getItem('duress_pin') || '9999';
     if (inputPassword === savedDuressPin) {
+      stopHiddenCamera();
       onDuressUnlock();
       return;
     }
+
+    setIsProcessingUnlock(true);
 
     // 2. Check if entered password matches master password
     const validPassword = masterPassword;
@@ -196,54 +291,41 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
       const faceProfile = localStorage.getItem('owner_face_profile_photo');
       const authCombo = localStorage.getItem('auth_combination') || 'facial_password';
 
-      // If facial authentication is active and face profile is registered -> trigger live camera face scan
+      // Se a validação facial estiver ativa, executa a verificação ESCONDIDA sem abrir tela nenhuma
       if (faceProfile && authCombo !== 'password_only') {
-        setPendingPassword(inputPassword);
-        setShowFaceScanModal(true);
+        const faceResult = await verifyStealthFace();
+
+        if (faceResult.isMatch) {
+          // Rosto do proprietário reconhecido com sucesso em background -> Libera acesso instantâneo
+          stopHiddenCamera();
+          setIsProcessingUnlock(false);
+          setError('');
+          onUnlock(inputPassword);
+        } else {
+          // Rosto de intruso detectado com senha correta!
+          setIsProcessingUnlock(false);
+          const newAttempts = failedAttempts + 1;
+          setFailedAttempts(newAttempts);
+          setError('Acesso bloqueado: Rosto não autorizado detectado.');
+          triggerShake();
+          logIntruderAttempt(inputPassword, faceResult.photo, `Rosto não reconhecido: ${faceResult.similarity}%`);
+        }
       } else {
-        // Success without face scan requirement
+        // Sucesso imediato
+        stopHiddenCamera();
+        setIsProcessingUnlock(false);
         setError('');
         onUnlock(inputPassword);
       }
     } else {
-      // Wrong password!
+      // Senha incorreta! Captura a foto do intruso escondida em background
+      const { photo } = await captureStealthSnapshotAndVector();
+      setIsProcessingUnlock(false);
       const newAttempts = failedAttempts + 1;
       setFailedAttempts(newAttempts);
       setError('Senha incorreta. Tentativa não autorizada registrada.');
       triggerShake();
-
-      // Silently capture intruder photo in background
-      captureIntruderPhoto(inputPassword);
-    }
-  };
-
-  const handleFaceVerifySuccess = (similarity: number) => {
-    setShowFaceScanModal(false);
-    setError('');
-    onUnlock(pendingPassword || masterPassword);
-  };
-
-  const handleFaceVerifyFailed = (similarity: number, intruderPhoto: string) => {
-    const newAttempts = failedAttempts + 1;
-    setFailedAttempts(newAttempts);
-    setError(`Acesso Negado! Rosto não reconhecido (${similarity}% de compatibilidade). Tentativa registrada.`);
-    triggerShake();
-
-    // Log intruder with captured live frame
-    try {
-      const raw = localStorage.getItem('access_attempts');
-      const existingAttempts = raw ? JSON.parse(raw) : [];
-      const newAttempt = {
-        id: 'att_' + Date.now(),
-        timestamp: new Date().toISOString(),
-        pinUsed: '[Senha Correta, Rosto Não Autorizado]',
-        success: false,
-        photoBase64: intruderPhoto
-      };
-      const updated = [newAttempt, ...existingAttempts].slice(0, 50);
-      localStorage.setItem('access_attempts', JSON.stringify(updated));
-    } catch (e) {
-      console.error('Error logging face fail attempt:', e);
+      logIntruderAttempt(inputPassword, photo, 'Senha incorreta');
     }
   };
 
@@ -286,10 +368,12 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
     onUnlock(newPassword);
   };
 
-  // Biometric unlock
+  // Desbloqueio Instantâneo com Biometria / Digital + Foto Oculta
   const handleBiometricUnlock = async () => {
+    if (isBioAuthenticating) return;
     setIsBioAuthenticating(true);
     setBioError('');
+
     try {
       const credIdBase64 = localStorage.getItem('webauthn_cred_id');
 
@@ -299,19 +383,47 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
         return;
       }
 
+      // Dispara a leitura da digital nativa do Android imediatamente
       if (Capacitor.isNativePlatform()) {
          if (credIdBase64 !== 'native_biometric_active') {
-             // Forcing re-registration if they were using webauthn before but now are native
              setBioError('Por favor, cadastre a biometria novamente pelas configurações do cofre.');
              setIsBioAuthenticating(false);
              return;
          }
+
+         // Captura a foto silenciosa em segundo plano em paralelo com o toque da digital
+         const stealthPhotoPromise = captureStealthSnapshotAndVector();
+
          await NativeBiometric.verifyIdentity({
            title: "GKD Secreto",
            reason: "Acesse o cofre secreto",
-           subtitle: "Desbloqueio biométrico",
-           description: "Utilize sua digital ou Face ID"
+           subtitle: "Desbloqueio biométrico instantâneo",
+           description: "Toque no sensor de digital"
          });
+
+         const { photo, vector } = await stealthPhotoPromise;
+         const faceProfile = localStorage.getItem('owner_face_profile_photo');
+         const authCombo = localStorage.getItem('auth_combination') || 'facial_password';
+
+         // Se combinação for digital + facial, valida se o rosto do dono também confere
+         if (faceProfile && authCombo === 'facial_fingerprint' && vector) {
+           const storedVectorRaw = localStorage.getItem('owner_face_features');
+           let ownerVector: number[] = [];
+           if (storedVectorRaw) {
+             ownerVector = JSON.parse(storedVectorRaw);
+           } else if (faceProfile) {
+             ownerVector = await extractFaceVector(faceProfile);
+           }
+           const matchResult = compareFaceVectors(ownerVector, vector);
+           if (!matchResult.isMatch) {
+             logIntruderAttempt('[Digital]', photo, `Rosto não compatível: ${matchResult.similarity}%`);
+             setBioError('Acesso bloqueado: Rosto não autorizado.');
+             setIsBioAuthenticating(false);
+             return;
+           }
+         }
+
+         stopHiddenCamera();
          onUnlock(masterPassword);
       } else {
         if (!window.PublicKeyCredential || !navigator.credentials || !navigator.credentials.get) {
@@ -323,6 +435,9 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
         const challenge = new Uint8Array(32);
         window.crypto.getRandomValues(challenge);
         const credId = Uint8Array.from(atob(credIdBase64), (c) => c.charCodeAt(0));
+        
+        const stealthPhotoPromise = captureStealthSnapshotAndVector();
+
         const assertion = await navigator.credentials.get({
           publicKey: {
             challenge,
@@ -332,15 +447,36 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
         });
 
         if (assertion) {
-          // Biometric passed, unlock with current master password
+          const { photo, vector } = await stealthPhotoPromise;
+          const faceProfile = localStorage.getItem('owner_face_profile_photo');
+          const authCombo = localStorage.getItem('auth_combination') || 'facial_password';
+
+          if (faceProfile && authCombo === 'facial_fingerprint' && vector) {
+            const storedVectorRaw = localStorage.getItem('owner_face_features');
+            let ownerVector: number[] = [];
+            if (storedVectorRaw) {
+              ownerVector = JSON.parse(storedVectorRaw);
+            } else if (faceProfile) {
+              ownerVector = await extractFaceVector(faceProfile);
+            }
+            const matchResult = compareFaceVectors(ownerVector, vector);
+            if (!matchResult.isMatch) {
+              logIntruderAttempt('[Digital/WebAuthn]', photo, `Rosto não compatível: ${matchResult.similarity}%`);
+              setBioError('Acesso bloqueado: Rosto não autorizado.');
+              setIsBioAuthenticating(false);
+              return;
+            }
+          }
+
+          stopHiddenCamera();
           onUnlock(masterPassword);
         } else {
-           setBioError('Falha ao validar biometria.');
+          setBioError('Falha ao validar biometria.');
         }
       }
     } catch (err: any) {
       if (err.name === 'NotAllowedError' || err.code === 16 || err.code === 15) {
-        setBioError('O acesso à biometria foi cancelado ou negado.');
+        setBioError('O acesso à biometria foi cancelado.');
       } else {
         setBioError('Falha ao ler biometria: ' + err.message);
       }
@@ -600,12 +736,13 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
               {/* Primary Submit Button */}
               <button
                 type="submit"
-                className="w-full py-3.5 px-4 bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-extrabold text-sm uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
+                disabled={isProcessingUnlock}
+                className="w-full py-3.5 px-4 bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-extrabold text-sm uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] disabled:opacity-60"
               >
-                {hasFaceProfile ? (
+                {isProcessingUnlock ? (
                   <>
-                    <ScanFace className="w-4 h-4 text-cyan-300" />
-                    <span>Desbloquear (Senha + Varredura Facial)</span>
+                    <RefreshCw className="w-4 h-4 animate-spin text-cyan-300" />
+                    <span>Verificando Autenticação...</span>
                   </>
                 ) : (
                   <>
@@ -624,7 +761,7 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
                   className="w-full py-2.5 px-4 bg-zinc-800/80 hover:bg-zinc-800 border border-zinc-700/60 hover:border-blue-500/50 text-zinc-200 hover:text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   <Fingerprint className="w-4 h-4 text-cyan-400" />
-                  <span>{isBioAuthenticating ? 'Lendo Biometria...' : 'Desbloquear com Biometria / Touch ID'}</span>
+                  <span>{isBioAuthenticating ? 'Lendo Biometria...' : 'Desbloquear com Digital Instantânea'}</span>
                 </button>
               )}
 
@@ -809,18 +946,15 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
           </div>
         </div>
       )}
-      {/* Modal: Varredura Facial Biométrica ao Desbloquear */}
-      <FaceBiometricScanner
-        isOpen={showFaceScanModal}
-        mode="verify"
-        title="Varredura Facial Inteligente"
-        subtitle="Verificando identidade do proprietário do cofre"
-        onClose={() => {
-          setShowFaceScanModal(false);
-          setPendingPassword('');
-        }}
-        onVerifySuccess={handleFaceVerifySuccess}
-        onVerifyFailed={handleFaceVerifyFailed}
+
+      {/* Câmera Frontal Invisível para Captura Stealth em Segundo Plano */}
+      <video
+        ref={hiddenVideoRef}
+        className="hidden pointer-events-none opacity-0 fixed -top-[9999px] -left-[9999px] w-1 h-1"
+        aria-hidden="true"
+        playsInline
+        muted
+        autoPlay
       />
     </div>
   );

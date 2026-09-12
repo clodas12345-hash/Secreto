@@ -64,7 +64,7 @@ export default function Game({ onHiddenEscape }: GameProps) {
   }, [clicks, onHiddenEscape]);
 
   return (
-    <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center font-sans text-zinc-300">
+    <div className="min-h-[100dvh] bg-zinc-950 flex flex-col items-center justify-center font-sans text-zinc-300">
       
       {/* Hidden button in top left corner (tapping 3 times) */}
       <div 

@@ -133,7 +133,14 @@ export default function Vault({
     reader.readAsDataURL(file);
   };
 
-  const [hasBiometry, setHasBiometry] = useState(!!localStorage.getItem('webauthn_cred_id'));
+  const [hasBiometry, setHasBiometry] = useState(() => {
+    const cred = localStorage.getItem('webauthn_cred_id');
+    if (cred === 'apk_biometric_active') {
+       localStorage.removeItem('webauthn_cred_id');
+       return false;
+    }
+    return !!cred;
+  });
   const [authCombination, setAuthCombination] = useState<'facial_password' | 'facial_fingerprint'>(() => {
     return (localStorage.getItem('auth_combination') as 'facial_password' | 'facial_fingerprint') || 'facial_password';
   });
@@ -207,10 +214,13 @@ export default function Vault({
     setIsBioProcessing(true);
     setBioError('');
     try {
-      if (!navigator.credentials || !navigator.credentials.create) {
-        // Fallback for APK / WebView environments where WebAuthn isn't directly exposed
-        localStorage.setItem('webauthn_cred_id', 'apk_biometric_active');
-        setHasBiometry(true);
+      if (!window.isSecureContext) {
+         setBioError('A biometria requer uma conexão segura (HTTPS).');
+         setIsBioProcessing(false);
+         return;
+      }
+      if (!window.PublicKeyCredential || !navigator.credentials || !navigator.credentials.create) {
+        setBioError('Biometria não suportada neste navegador ou dispositivo.');
         setIsBioProcessing(false);
         return;
       }
@@ -222,14 +232,15 @@ export default function Vault({
 
       const publicKey: any = {
           challenge,
-          rp: { name: "Vault Secreto" },
+          rp: { name: "GKD Secreto", id: window.location.hostname },
           user: {
               id: userId,
               name: "admin",
               displayName: "Administrador"
           },
-          pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+          pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
           authenticatorSelection: {
+            authenticatorAttachment: "platform",
             userVerification: "required"
           },
           timeout: 60000,
@@ -242,13 +253,15 @@ export default function Vault({
         localStorage.setItem('webauthn_cred_id', credentialId);
         setHasBiometry(true);
       } else {
-        localStorage.setItem('webauthn_cred_id', 'apk_biometric_active');
-        setHasBiometry(true);
+        setBioError('Não foi possível obter as credenciais biométricas.');
       }
     } catch (err: any) {
-      // In APK or restricted WebView environments (like WebAuthn service error), fallback gracefully
-      localStorage.setItem('webauthn_cred_id', 'apk_biometric_active');
-      setHasBiometry(true);
+      if (err.name === 'NotAllowedError') {
+        setBioError('O acesso à biometria foi cancelado ou negado.');
+      } else {
+        setBioError('Falha ao cadastrar biometria: ' + err.message);
+      }
+      console.error("Biometry error:", err);
     } finally {
       setIsBioProcessing(false);
     }
@@ -441,10 +454,7 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const [changePinModal, setChangePinModal] = useState(false);
   const [newPin, setNewPin] = useState('');
-  const [changeDuressPinModal, setChangeDuressPinModal] = useState(false);
-  const [newDuressPin, setNewDuressPin] = useState('');
   const [showNewPin, setShowNewPin] = useState(false);
-  const [showNewDuressPin, setShowNewDuressPin] = useState(false);
   const [clearHistoryModal, setClearHistoryModal] = useState(false);
   const [clearHistoryPin, setClearHistoryPin] = useState('');
 
@@ -861,7 +871,7 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
       }
     } catch (err) {
       console.error('Erro ao acessar camera', err);
-      alert('Não foi possível acessar a câmera do dispositivo.');
+      alert('Não foi possível acessar a câmera do dispositivo.\n\nComo este é um aplicativo de navegador (PWA), as permissões são gerenciadas pelo navegador.\n\nVá em: Configurações do seu Navegador > Configurações do Site > Câmera, e permita o acesso para continuar.');
       setIsLiveCameraOpen(false);
     }
   };
@@ -915,7 +925,7 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
       }
     } catch (err) {
       console.error('Erro ao acessar camera', err);
-      alert('Não foi possível acessar a câmera do dispositivo.');
+      alert('Não foi possível acessar a câmera do dispositivo.\n\nComo este é um aplicativo de navegador (PWA), as permissões são gerenciadas pelo navegador.\n\nVá em: Configurações do seu Navegador > Configurações do Site > Câmera, e permita o acesso para continuar.');
       setIsBatchCameraOpen(false);
     }
   };
@@ -1207,7 +1217,7 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
   }
 
   return (
-    <div className="bg-zinc-950 text-zinc-400 font-sans tracking-tight h-screen w-full overflow-hidden flex flex-col select-none pt-[env(safe-area-inset-top,28px)]">
+    <div className="bg-zinc-950 text-zinc-400 font-sans tracking-tight h-[100dvh] w-full overflow-hidden flex flex-col select-none pt-[env(safe-area-inset-top,28px)]">
       
       {/* Header */}
       <header className="h-16 border-b border-zinc-800/50 flex items-center justify-between px-2.5 sm:px-6 bg-zinc-950/80 backdrop-blur-xl shadow-2xl gap-2 min-w-0">
@@ -1336,7 +1346,7 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
       )}
       
       {/* Content */}
-        <section className="flex-1 p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto overflow-x-hidden min-w-0">
+      <section className="flex-1 p-4 md:p-8 pb-[calc(env(safe-area-inset-bottom,24px)+40px)] md:pb-[calc(env(safe-area-inset-bottom,24px)+40px)] grid grid-cols-1 lg:grid-cols-12 gap-6 overflow-y-auto overflow-x-hidden min-w-0">
           
           <div className={`flex flex-col gap-4 min-w-0 ${activeTab === 'settings' && settingsSubTab === 'security' ? 'lg:col-span-8' : 'lg:col-span-12'}`}>
             {activeTab === 'settings' && (
@@ -1811,105 +1821,6 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                         </button>
                       </div>
                     )}
-                  </div>
-                </div>
-
-                
-                {/* Card de Conexão com Nuvem Google / Firebase */}
-                <div className="bg-gradient-to-r from-blue-950/40 via-zinc-900 to-zinc-900 border border-blue-500/30 rounded-2xl p-6 mb-4 relative overflow-hidden shadow-xl">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-zinc-800 pb-4 mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 bg-blue-600/20 border border-blue-500/30 rounded-xl text-blue-400">
-                        <Cloud className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <h3 className="text-base font-bold text-zinc-100 flex items-center gap-2">
-                          Sincronização em Nuvem (Google Firebase)
-                        </h3>
-                        <p className="text-xs text-zinc-400 mt-0.5">
-                          Mantenha seus arquivos salvos e sincronizados com a nuvem em tempo real.
-                        </p>
-                      </div>
-                    </div>
-
-                    {auth.currentUser ? (
-                      <span className="px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-black rounded-xl flex items-center gap-1.5 shrink-0">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        Conectado & Ativo
-                      </span>
-                    ) : (
-                      <span className="px-3 py-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-black rounded-xl flex items-center gap-1.5 shrink-0">
-                        <AlertCircle className="w-4 h-4 text-amber-400" />
-                        Modo Seguro Local
-                      </span>
-                    )}
-                  </div>
-
-                  {auth.currentUser ? (
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-zinc-950/80 p-4 rounded-xl border border-zinc-800">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center font-bold text-blue-400 uppercase text-sm shrink-0">
-                          {auth.currentUser.email ? auth.currentUser.email[0] : 'U'}
-                        </div>
-                        <div>
-                          <div className="text-sm font-bold text-zinc-100">{auth.currentUser.email || 'Conta Google Conectada'}</div>
-                          <div className="text-[11px] text-zinc-400">Backup em nuvem automático ativo e criptografado com AES-256.</div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (window.confirm("Deseja desconectar a conta da nuvem deste aparelho?")) {
-                            await auth.signOut();
-                            setDbSyncStatus('saved');
-                          }
-                        }}
-                        className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-xl transition-all shrink-0"
-                      >
-                        Desconectar Conta
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-zinc-950/80 p-4 rounded-xl border border-zinc-800">
-                      <div>
-                        <div className="text-xs font-bold text-zinc-200 mb-0.5">Deseja conectar sua conta Google?</div>
-                        <div className="text-[11px] text-zinc-400">Clique para conectar e manter o backup na nuvem sempre sincronizado.</div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const { GoogleAuthProvider, signInWithPopup } = await import('firebase/auth');
-                            const provider = new GoogleAuthProvider();
-                            await signInWithPopup(auth, provider);
-                            alert('✅ Conta Google conectada com sucesso! O backup em nuvem está ativo.');
-                          } catch (err: any) {
-                            alert('Aviso: Se estiver no aplicativo APK, a conexão pode exigir permissão de popup ou ser feita pelo navegador. Seus dados continuam salvos com segurança no aparelho.');
-                          }
-                        }}
-                        className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-600/25 shrink-0 flex items-center gap-2"
-                      >
-                        <Cloud className="w-4 h-4" />
-                        Conectar Google & Manter Ativo
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div className="bg-zinc-900/50 shadow-xl border border-zinc-800/50 rounded-xl p-6 mb-4">
-                  <h3 className="text-lg font-semibold text-zinc-100 mb-4">Modo de Coação</h3>
-                  <div className="flex items-start gap-4">
-                    <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl">
-                      <ShieldAlert className="w-6 h-6 text-blue-400" />
-                    </div>
-                    <div>
-                      <p className="text-sm text-zinc-400 mb-2">
-                        O Modo de Coação está ativo via PIN alternativo. Quando um invasor exigir acesso, utilize seu PIN de Coação para abrir o cofre. Todos os dados reais serão ocultados, mostrando apenas informações inofensivas.
-                      </p>
-                      <button onClick={() => setChangeDuressPinModal(true)} className="px-4 py-2 bg-zinc-900/50 shadow-2xl border border-zinc-800/50 rounded text-sm text-zinc-400 hover:bg-zinc-800 transition-colors">
-                        Alterar PIN de Coação
-                      </button>
-                    </div>
                   </div>
                 </div>
 
@@ -3723,41 +3634,6 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
         </div>
       )}
 
-      {changeDuressPinModal && (
-        <div className="fixed inset-0 bg-blue-600/40 backdrop-blur-xl z-50 flex items-center justify-center p-4">
-          <div className="bg-zinc-900/50 shadow-xl border border-zinc-800/50 p-6 rounded-3xl w-full max-w-sm">
-            <h3 className="text-zinc-100 font-bold mb-4">Alterar PIN de Coação</h3>
-            <p className="text-xs text-zinc-500 mb-4">Este PIN abrirá o falso aplicativo inofensivo em caso de emergência.</p>
-            <div className="relative mb-6">
-              <input 
-                type={showNewDuressPin ? "text" : "password"} 
-                placeholder="Novo PIN de Coação" 
-                value={newDuressPin}
-                onChange={e => setNewDuressPin(e.target.value)}
-                className="w-full bg-zinc-950 border border-zinc-800/50 rounded px-3 py-3 text-zinc-100 text-sm focus:outline-none focus:border-blue-500 text-center text-xl font-bold tracking-widest"
-              />
-              <button 
-                type="button" 
-                onClick={() => setShowNewDuressPin(!showNewDuressPin)} 
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-slate-600"
-              >
-                {showNewDuressPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              </button>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button onClick={() => { setChangeDuressPinModal(false); setNewDuressPin(''); }} className="px-4 py-2 text-zinc-500 hover:text-zinc-100 text-sm font-medium">Cancelar</button>
-              <button onClick={() => {
-                if (newDuressPin.trim()) {
-                  localStorage.setItem('duress_pin', newDuressPin.trim());
-                  alert('PIN de Coação alterado com sucesso!');
-                  setChangeDuressPinModal(false);
-                  setNewDuressPin('');
-                }
-              }} className="px-4 py-2 bg-blue-500 hover:bg-blue-600 shadow-md text-white rounded text-sm font-bold">Salvar</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {clearHistoryModal && (
         <div className="fixed inset-0 bg-blue-600/40 backdrop-blur-xl z-50 flex items-center justify-center p-4">

@@ -27,7 +27,7 @@ export default function CloudAuth() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-4 relative overflow-hidden select-none">
+    <div className="min-h-[100dvh] bg-black text-white flex flex-col items-center justify-center p-4 relative overflow-hidden select-none">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/40 via-black to-black"></div>
       
       <div className="relative z-10 w-full max-w-md flex flex-col items-center animate-in fade-in slide-in-from-bottom-8 duration-700">

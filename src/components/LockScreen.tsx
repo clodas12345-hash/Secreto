@@ -60,7 +60,14 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
 
   // Biometrics
-  const [hasBiometry, setHasBiometry] = useState(() => !!localStorage.getItem('webauthn_cred_id'));
+  const [hasBiometry, setHasBiometry] = useState(() => {
+    const cred = localStorage.getItem('webauthn_cred_id');
+    if (cred === 'apk_biometric_active') {
+       localStorage.removeItem('webauthn_cred_id');
+       return false;
+    }
+    return !!cred;
+  });
   const [isBioAuthenticating, setIsBioAuthenticating] = useState(false);
   const [bioError, setBioError] = useState('');
 
@@ -239,18 +246,15 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
     try {
       const credIdBase64 = localStorage.getItem('webauthn_cred_id');
 
-      if (!credIdBase64) {
+      if (!credIdBase64 || credIdBase64 === 'apk_biometric_active') {
         setBioError('Nenhuma biometria cadastrada neste dispositivo.');
         setIsBioAuthenticating(false);
         return;
       }
 
-      // If registered via APK fallback or WebAuthn unavailable in WebView, unlock directly
-      if (credIdBase64 === 'apk_biometric_active' || !navigator.credentials || !navigator.credentials.get) {
-        setTimeout(() => {
-          onUnlock(masterPassword);
-          setIsBioAuthenticating(false);
-        }, 600);
+      if (!window.PublicKeyCredential || !navigator.credentials || !navigator.credentials.get) {
+        setBioError('Biometria não suportada neste navegador ou dispositivo.');
+        setIsBioAuthenticating(false);
         return;
       }
 
@@ -261,19 +265,23 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
         publicKey: {
           challenge,
           allowCredentials: [{ id: credId, type: 'public-key' }],
-          userVerification: 'preferred'
+          userVerification: 'required'
         }
       });
 
       if (assertion) {
         // Biometric passed, unlock with current master password
         onUnlock(masterPassword);
+      } else {
+         setBioError('Falha ao validar biometria.');
       }
-    } catch (err) {
-      // Fallback for APK / WebView if biometric assertion fails
-      setTimeout(() => {
-        onUnlock(masterPassword);
-      }, 500);
+    } catch (err: any) {
+      if (err.name === 'NotAllowedError') {
+        setBioError('O acesso à biometria foi cancelado ou negado.');
+      } else {
+        setBioError('Falha ao ler biometria: ' + err.message);
+      }
+      console.error("Biometry unlock error:", err);
     } finally {
       setIsBioAuthenticating(false);
     }
@@ -295,7 +303,7 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center p-4 sm:p-6 pt-[env(safe-area-inset-top,32px)] relative overflow-hidden select-none">
+    <div className="min-h-[100dvh] bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center p-4 sm:p-6 pt-[env(safe-area-inset-top,32px)] relative overflow-hidden select-none">
       {/* Background ambient lighting */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-zinc-950/80 to-zinc-950 pointer-events-none" />
       <div className="absolute -top-40 -left-40 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />

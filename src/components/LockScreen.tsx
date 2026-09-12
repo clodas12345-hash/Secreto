@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 import { 
   LockKeyhole, 
   KeyRound, 
@@ -252,31 +254,47 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
         return;
       }
 
-      if (!window.PublicKeyCredential || !navigator.credentials || !navigator.credentials.get) {
-        setBioError('Biometria não suportada neste navegador ou dispositivo.');
-        setIsBioAuthenticating(false);
-        return;
-      }
-
-      const challenge = new Uint8Array(32);
-      window.crypto.getRandomValues(challenge);
-      const credId = Uint8Array.from(atob(credIdBase64), (c) => c.charCodeAt(0));
-      const assertion = await navigator.credentials.get({
-        publicKey: {
-          challenge,
-          allowCredentials: [{ id: credId, type: 'public-key' }],
-          userVerification: 'required'
-        }
-      });
-
-      if (assertion) {
-        // Biometric passed, unlock with current master password
-        onUnlock(masterPassword);
+      if (Capacitor.isNativePlatform()) {
+         if (credIdBase64 !== 'native_biometric_active') {
+             // Forcing re-registration if they were using webauthn before but now are native
+             setBioError('Por favor, cadastre a biometria novamente pelas configurações do cofre.');
+             setIsBioAuthenticating(false);
+             return;
+         }
+         await NativeBiometric.verifyIdentity({
+           title: "GKD Secreto",
+           reason: "Acesse o cofre secreto",
+           subtitle: "Desbloqueio biométrico",
+           description: "Utilize sua digital ou Face ID"
+         });
+         onUnlock(masterPassword);
       } else {
-         setBioError('Falha ao validar biometria.');
+        if (!window.PublicKeyCredential || !navigator.credentials || !navigator.credentials.get) {
+          setBioError('Biometria não suportada neste navegador ou dispositivo.');
+          setIsBioAuthenticating(false);
+          return;
+        }
+
+        const challenge = new Uint8Array(32);
+        window.crypto.getRandomValues(challenge);
+        const credId = Uint8Array.from(atob(credIdBase64), (c) => c.charCodeAt(0));
+        const assertion = await navigator.credentials.get({
+          publicKey: {
+            challenge,
+            allowCredentials: [{ id: credId, type: 'public-key' }],
+            userVerification: 'required'
+          }
+        });
+
+        if (assertion) {
+          // Biometric passed, unlock with current master password
+          onUnlock(masterPassword);
+        } else {
+           setBioError('Falha ao validar biometria.');
+        }
       }
     } catch (err: any) {
-      if (err.name === 'NotAllowedError') {
+      if (err.name === 'NotAllowedError' || err.code === 16 || err.code === 15) {
         setBioError('O acesso à biometria foi cancelado ou negado.');
       } else {
         setBioError('Falha ao ler biometria: ' + err.message);

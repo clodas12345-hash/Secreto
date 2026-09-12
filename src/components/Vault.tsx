@@ -6,6 +6,8 @@ import { PasswordEntry, DocumentEntry, AccessAttempt, Folder as FolderType } fro
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { updateEmail, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
+import { Capacitor } from '@capacitor/core';
+import { NativeBiometric } from '@capgo/capacitor-native-biometric';
 import CryptoJS from 'crypto-js';
 import JSZip from 'jszip';
 import { identifyAppOrSite, getFaviconUrl, KNOWN_APPS, RecognizedApp } from '../utils/appIdentifier';
@@ -214,49 +216,66 @@ export default function Vault({
     setIsBioProcessing(true);
     setBioError('');
     try {
-      if (!window.isSecureContext) {
-         setBioError('A biometria requer uma conexão segura (HTTPS).');
-         setIsBioProcessing(false);
-         return;
-      }
-      if (!window.PublicKeyCredential || !navigator.credentials || !navigator.credentials.create) {
-        setBioError('Biometria não suportada neste navegador ou dispositivo.');
-        setIsBioProcessing(false);
-        return;
-      }
-
-      const challenge = new Uint8Array(32);
-      window.crypto.getRandomValues(challenge);
-      const userId = new Uint8Array(16);
-      window.crypto.getRandomValues(userId);
-
-      const publicKey: any = {
-          challenge,
-          rp: { name: "GKD Secreto", id: window.location.hostname },
-          user: {
-              id: userId,
-              name: "admin",
-              displayName: "Administrador"
-          },
-          pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
-          authenticatorSelection: {
-            authenticatorAttachment: "platform",
-            userVerification: "required"
-          },
-          timeout: 60000,
-          attestation: "none"
-      };
-
-      const cred = await navigator.credentials.create({ publicKey });
-      if (cred && (cred as any).rawId) {
-        const credentialId = btoa(String.fromCharCode.apply(null, new Uint8Array((cred as any).rawId) as any));
-        localStorage.setItem('webauthn_cred_id', credentialId);
+      if (Capacitor.isNativePlatform()) {
+        const result = await NativeBiometric.isAvailable();
+        if (!result.isAvailable) {
+           setBioError('Biometria nativa não suportada ou não configurada neste dispositivo.');
+           setIsBioProcessing(false);
+           return;
+        }
+        await NativeBiometric.verifyIdentity({
+          title: "GKD Secreto",
+          reason: "Confirme sua identidade para cadastrar a biometria",
+          subtitle: "Cadastro de Biometria",
+          description: "Utilize sua digital ou Face ID"
+        });
+        localStorage.setItem('webauthn_cred_id', 'native_biometric_active');
         setHasBiometry(true);
       } else {
-        setBioError('Não foi possível obter as credenciais biométricas.');
+        if (!window.isSecureContext) {
+           setBioError('A biometria requer uma conexão segura (HTTPS).');
+           setIsBioProcessing(false);
+           return;
+        }
+        if (!window.PublicKeyCredential || !navigator.credentials || !navigator.credentials.create) {
+          setBioError('Biometria não suportada neste navegador ou dispositivo.');
+          setIsBioProcessing(false);
+          return;
+        }
+
+        const challenge = new Uint8Array(32);
+        window.crypto.getRandomValues(challenge);
+        const userId = new Uint8Array(16);
+        window.crypto.getRandomValues(userId);
+
+        const publicKey: any = {
+            challenge,
+            rp: { name: "GKD Secreto", id: window.location.hostname },
+            user: {
+                id: userId,
+                name: "admin",
+                displayName: "Administrador"
+            },
+            pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+            authenticatorSelection: {
+              authenticatorAttachment: "platform",
+              userVerification: "required"
+            },
+            timeout: 60000,
+            attestation: "none"
+        };
+
+        const cred = await navigator.credentials.create({ publicKey });
+        if (cred && (cred as any).rawId) {
+          const credentialId = btoa(String.fromCharCode.apply(null, new Uint8Array((cred as any).rawId) as any));
+          localStorage.setItem('webauthn_cred_id', credentialId);
+          setHasBiometry(true);
+        } else {
+          setBioError('Não foi possível obter as credenciais biométricas.');
+        }
       }
     } catch (err: any) {
-      if (err.name === 'NotAllowedError') {
+      if (err.name === 'NotAllowedError' || err.code === 16 || err.code === 15) {
         setBioError('O acesso à biometria foi cancelado ou negado.');
       } else {
         setBioError('Falha ao cadastrar biometria: ' + err.message);

@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Camera as CapCamera, CameraResultType, CameraSource, CameraDirection } from '@capacitor/camera';
 import { 
   ScanFace, 
   ShieldCheck, 
@@ -58,8 +60,17 @@ export default function FaceBiometricScanner({
     setCapturedSnapshot(null);
 
     try {
+      // Request native system permissions on Android / iOS
+      if (Capacitor.isNativePlatform()) {
+        try {
+          await CapCamera.requestPermissions({ permissions: ['camera'] });
+        } catch (permErr) {
+          console.warn('Capacitor camera requestPermissions error:', permErr);
+        }
+      }
+
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('Acesso à câmera não suportado neste dispositivo.');
+        throw new Error('Acesso à câmera via stream não suportado diretamente.');
       }
 
       // Stop existing stream if any
@@ -99,10 +110,86 @@ export default function FaceBiometricScanner({
       console.error('Erro ao iniciar câmera:', err);
       setCameraState('error');
       setErrorMessage(
-        err.name === 'NotAllowedError'
-          ? 'Permissão de câmera negada. Habilite o acesso à câmera nas configurações do navegador/dispositivo.'
+        err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError'
+          ? 'Permissão de câmera não concedida. Você pode autorizar ou usar a captura direta da Câmera do Aparelho.'
           : 'Não foi possível inicializar a câmera: ' + (err.message || err)
       );
+    }
+  };
+
+  // Native photo capture fallback (works directly with Android/iOS native camera activities)
+  const handleNativeCameraCapture = async () => {
+    try {
+      setCameraState('loading');
+      setStatusMessage('Abrindo Câmera Frontal do Sistema...');
+      const photo = await CapCamera.getPhoto({
+        quality: 90,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Camera,
+        direction: CameraDirection.Front,
+        promptLabelHeader: 'Biometria Facial',
+        promptLabelPhoto: 'Tirar Foto Facial',
+        promptLabelPicture: 'Foto Frontal'
+      });
+
+      if (photo.dataUrl) {
+        setCapturedSnapshot(photo.dataUrl);
+
+        if (mode === 'enroll') {
+          setCameraState('scanning');
+          setStatusMessage('Mapeando características faciais da foto...');
+          const vector = await extractFaceVector(photo.dataUrl);
+          localStorage.setItem('owner_face_profile_photo', photo.dataUrl);
+          localStorage.setItem('owner_face_features', JSON.stringify(vector));
+          localStorage.setItem('owner_face_registered_at', new Date().toISOString());
+
+          setCameraState('matched');
+          setStatusMessage('Biometria Facial cadastrada com sucesso!');
+          setTimeout(() => {
+            onEnrolled?.(photo.dataUrl!);
+            stopCamera();
+            onClose();
+          }, 1200);
+        } else {
+          // Verification mode
+          setCameraState('scanning');
+          setStatusMessage('Comparando foto com biometria cadastrada...');
+          const storedVectorRaw = localStorage.getItem('owner_face_features');
+          const storedPhoto = localStorage.getItem('owner_face_profile_photo');
+          let ownerVector: number[] = [];
+          if (storedVectorRaw) {
+            ownerVector = JSON.parse(storedVectorRaw);
+          } else if (storedPhoto) {
+            ownerVector = await extractFaceVector(storedPhoto);
+          }
+
+          const liveVector = await extractFaceVector(photo.dataUrl);
+          const matchResult: FaceMatchResult = compareFaceVectors(ownerVector, liveVector);
+          setMatchScore(matchResult.similarity);
+
+          if (matchResult.isMatch) {
+            setCameraState('matched');
+            setStatusMessage(`Identidade confirmada! Proprietário Reconhecido (${matchResult.similarity}% de compatibilidade).`);
+            setTimeout(() => {
+              stopCamera();
+              onVerifySuccess?.(matchResult.similarity);
+              onClose();
+            }, 1100);
+          } else {
+            setCameraState('failed');
+            setStatusMessage(`Rosto não autorizado (${matchResult.similarity}%). Acesso bloqueado.`);
+            onVerifyFailed?.(matchResult.similarity, photo.dataUrl);
+          }
+        }
+      } else {
+        setCameraState('error');
+        setErrorMessage('Nenhuma foto capturada.');
+      }
+    } catch (err: any) {
+      console.error('Erro na captura nativa:', err);
+      setCameraState('error');
+      setErrorMessage(err.message || 'Câmera cancelada ou não disponível.');
     }
   };
 
@@ -333,14 +420,27 @@ export default function FaceBiometricScanner({
           {/* Error State */}
           {cameraState === 'error' && (
             <div className="absolute inset-0 bg-zinc-950 p-4 flex flex-col items-center justify-center text-center gap-2">
-              <AlertTriangle className="w-8 h-8 text-amber-400" />
-              <p className="text-xs text-zinc-300">{errorMessage}</p>
-              <button
-                onClick={startCamera}
-                className="mt-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-colors"
-              >
-                Tentar Novamente
-              </button>
+              <AlertTriangle className="w-8 h-8 text-amber-400 shrink-0" />
+              <p className="text-xs text-zinc-300 max-h-24 overflow-y-auto px-1">{errorMessage}</p>
+              
+              <div className="flex flex-col w-full gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={handleNativeCameraCapture}
+                  className="w-full py-2.5 px-3 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>Usar Câmera Nativa do Aparelho</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="w-full py-2 px-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Tentar Câmera ao Vivo Novamente
+                </button>
+              </div>
             </div>
           )}
 

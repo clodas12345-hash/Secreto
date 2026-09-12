@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Camera as CapCamera } from '@capacitor/camera';
 import { 
   Camera, 
   MapPin, 
@@ -272,6 +274,14 @@ export default function PermissionsModal({
   const requestCamera = async () => {
     try {
       setActiveTest('camera');
+      if (Capacitor.isNativePlatform()) {
+        try {
+          await CapCamera.requestPermissions({ permissions: ['camera'] });
+        } catch (capErr) {
+          console.warn('Capacitor camera request error:', capErr);
+        }
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }
       });
@@ -287,7 +297,7 @@ export default function PermissionsModal({
     } catch (err: any) {
       console.warn('Erro ao solicitar câmera:', err);
       setStatuses(prev => ({ ...prev, camera: 'denied' }));
-      setDetails(prev => ({ ...prev, camera: 'Acesso à câmera foi recusado ou bloqueado no navegador.' }));
+      setDetails(prev => ({ ...prev, camera: 'Acesso à câmera foi recusado ou bloqueado nas configurações do dispositivo.' }));
     }
   };
 

@@ -1198,7 +1198,7 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
   }
 
   return (
-    <div className="bg-zinc-950 text-zinc-400 font-sans tracking-tight h-screen w-full overflow-hidden flex flex-col select-none">
+    <div className="bg-zinc-950 text-zinc-400 font-sans tracking-tight h-screen w-full overflow-hidden flex flex-col select-none pt-[env(safe-area-inset-top,28px)]">
       
       {/* Header */}
       <header className="h-16 border-b border-zinc-800/50 flex items-center justify-between px-2.5 sm:px-6 bg-zinc-950/80 backdrop-blur-xl shadow-2xl gap-2 min-w-0">
@@ -1227,7 +1227,7 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
           <div className="flex flex-col min-w-0">
             <div className="flex items-center gap-1.5">
               <span className="text-sm sm:text-lg font-bold tracking-tight text-zinc-100 uppercase group-hover:text-white transition-colors truncate">
-                <span className="text-blue-500">GKD</span> Secreto
+                Secreto
               </span>
               <span className="px-1.5 py-0.5 text-[8px] font-extrabold bg-blue-500/15 text-blue-400 border border-blue-500/30 rounded tracking-wider shrink-0">PRO</span>
             </div>

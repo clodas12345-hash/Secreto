@@ -1,6 +1,6 @@
 {
-  "name": "GKD Secreto - Cofre Seguro",
-  "short_name": "GKD Secreto",
+  "name": "Secreto",
+  "short_name": "Secreto",
   "description": "Cofre confidencial de senhas e documentos com autenticação dupla e modo de emergência disfarçado.",
   "start_url": "/",
   "display": "standalone",

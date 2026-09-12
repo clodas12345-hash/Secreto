@@ -1,5 +1,5 @@
 {
-  "name": "Confidencial",
+  "name": "Secreto",
   "description": "Cofre de senhas e documentos com autenticação dupla, modo anti-coação, aplicativo nativo Android e extensão para leitura e preenchimento automático de senhas.",
   "requestFramePermissions": ["camera", "microphone", "geolocation", "publickey-credentials-get", "publickey-credentials-create"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

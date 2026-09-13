@@ -8,6 +8,7 @@ import {
   captureVideoFrameBase64,
   FaceMatchResult 
 } from '../utils/faceMatcher';
+import { safeSetItem } from '../utils/safeStorage';
 import { 
   LockKeyhole, 
   KeyRound, 
@@ -167,19 +168,21 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
   // Captura instantânea e silenciosa de múltiplos frames para alta precisão facial
   const captureStealthSnapshotAndVector = async (): Promise<{ photo: string | null; allSamples: { photo: string; vector: number[] }[] }> => {
     try {
-      // 1. Tenta pegar do stream oculto já em execução com multi-sampling (3 frames)
+      // 1. Tenta pegar do stream oculto já em execução com multi-sampling (5 frames)
       if (hiddenVideoRef.current && hiddenVideoRef.current.readyState >= 2) {
         const samples: { photo: string; vector: number[] }[] = [];
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 5; i++) {
           const photo = captureVideoFrameBase64(hiddenVideoRef.current);
           const vector = await extractFaceVector(hiddenVideoRef.current);
-          samples.push({ photo, vector });
-          if (i < 2) {
-            await new Promise(r => setTimeout(r, 60));
+          if (vector && vector.length > 0) {
+            samples.push({ photo, vector });
+          }
+          if (i < 4) {
+            await new Promise(r => setTimeout(r, 40));
           }
         }
         return { 
-          photo: samples[samples.length - 1].photo, 
+          photo: samples.length > 0 ? samples[samples.length - 1].photo : captureVideoFrameBase64(hiddenVideoRef.current), 
           allSamples: samples
         };
       }
@@ -195,18 +198,23 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
         tempVideo.setAttribute('playsinline', 'true');
         tempVideo.muted = true;
         await tempVideo.play();
-        await new Promise(r => setTimeout(r, 180));
+        await new Promise(r => setTimeout(r, 200));
 
         const samples: { photo: string; vector: number[] }[] = [];
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 5; i++) {
           const photo = captureVideoFrameBase64(tempVideo);
           const vector = await extractFaceVector(tempVideo);
-          samples.push({ photo, vector });
-          if (i < 2) await new Promise(r => setTimeout(r, 60));
+          if (vector && vector.length > 0) {
+            samples.push({ photo, vector });
+          }
+          if (i < 4) await new Promise(r => setTimeout(r, 40));
         }
 
         tempStream.getTracks().forEach(t => t.stop());
-        return { photo: samples[samples.length - 1].photo, allSamples: samples };
+        return { 
+          photo: samples.length > 0 ? samples[samples.length - 1].photo : null, 
+          allSamples: samples 
+        };
       }
     } catch (err) {
       console.warn('Falha na captura stealth da câmera:', err);
@@ -270,7 +278,7 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
     }
   };
 
-  // Log silencioso de intruso com foto capturada
+  // Log silencioso de intruso com foto capturada e gestão segura de quota
   const logIntruderAttempt = (wrongPin: string, intruderPhoto: string | null, reason?: string) => {
     try {
       const existingAttempts: AccessAttempt[] = JSON.parse(
@@ -283,8 +291,14 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
         success: false,
         photoBase64: intruderPhoto
       };
-      const updated = [newAttempt, ...existingAttempts].slice(0, 50);
-      localStorage.setItem('access_attempts', JSON.stringify(updated));
+      // Keep only top 15 records and strip photos from older attempts to prevent quota overflow
+      const updated = [newAttempt, ...existingAttempts].slice(0, 15).map((att, idx) => {
+        if (idx >= 3) {
+          return { ...att, photoBase64: null };
+        }
+        return att;
+      });
+      safeSetItem('access_attempts', JSON.stringify(updated));
     } catch (e) {
       console.error('Erro ao registrar log de intruso:', e);
     }

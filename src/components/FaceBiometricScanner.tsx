@@ -19,6 +19,7 @@ import {
   captureVideoFrameBase64,
   FaceMatchResult 
 } from '../utils/faceMatcher';
+import { safeSetItem, compressBase64Image, compactVector } from '../utils/safeStorage';
 
 interface FaceBiometricScannerProps {
   isOpen: boolean;
@@ -139,15 +140,18 @@ export default function FaceBiometricScanner({
         if (mode === 'enroll') {
           setCameraState('scanning');
           setStatusMessage('Mapeando características faciais da foto...');
-          const vector = await extractFaceVector(photo.dataUrl);
-          localStorage.setItem('owner_face_profile_photo', photo.dataUrl);
-          localStorage.setItem('owner_face_features', JSON.stringify(vector));
-          localStorage.setItem('owner_face_registered_at', new Date().toISOString());
+          const compressedPhoto = await compressBase64Image(photo.dataUrl, 240, 240, 0.60);
+          const rawVector = await extractFaceVector(compressedPhoto);
+          const vector = compactVector(rawVector);
+
+          safeSetItem('owner_face_profile_photo', compressedPhoto);
+          safeSetItem('owner_face_features', JSON.stringify(vector));
+          safeSetItem('owner_face_registered_at', new Date().toISOString());
 
           setCameraState('matched');
           setStatusMessage('Biometria Facial cadastrada com sucesso!');
           setTimeout(() => {
-            onEnrolled?.(photo.dataUrl!);
+            onEnrolled?.(compressedPhoto);
             stopCamera();
             onClose();
           }, 1200);
@@ -235,16 +239,17 @@ export default function FaceBiometricScanner({
       setCameraState('scanning');
       setStatusMessage('Capturando e mapeando características faciais...');
 
-      const photoBase64 = captureVideoFrameBase64(videoRef.current);
+      const photoBase64 = captureVideoFrameBase64(videoRef.current, 0.60);
       setCapturedSnapshot(photoBase64);
 
       // Extract vector
-      const vector = await extractFaceVector(videoRef.current);
+      const rawVector = await extractFaceVector(videoRef.current);
+      const vector = compactVector(rawVector);
 
-      // Save to localStorage
-      localStorage.setItem('owner_face_profile_photo', photoBase64);
-      localStorage.setItem('owner_face_features', JSON.stringify(vector));
-      localStorage.setItem('owner_face_registered_at', new Date().toISOString());
+      // Save safely to storage
+      safeSetItem('owner_face_profile_photo', photoBase64);
+      safeSetItem('owner_face_features', JSON.stringify(vector));
+      safeSetItem('owner_face_registered_at', new Date().toISOString());
 
       setCameraState('matched');
       setStatusMessage('Biometria Facial cadastrada com sucesso!');

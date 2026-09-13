@@ -142,6 +142,14 @@ export default function FaceBiometricScanner({
           setStatusMessage('Mapeando características faciais da foto...');
           const compressedPhoto = await compressBase64Image(photo.dataUrl, 240, 240, 0.60);
           const rawVector = await extractFaceVector(compressedPhoto);
+
+          if (!rawVector || rawVector.length === 0) {
+            setCameraState('failed');
+            setStatusMessage('Câmera coberta ou iluminação insuficiente.');
+            setErrorMessage('Não foi possível identificar traços faciais nítidos. Limpe a lente e posicione o rosto sob boa luz.');
+            return;
+          }
+
           const vector = compactVector(rawVector);
 
           safeSetItem('owner_face_profile_photo', compressedPhoto);
@@ -244,6 +252,12 @@ export default function FaceBiometricScanner({
 
       // Extract vector
       const rawVector = await extractFaceVector(videoRef.current);
+      if (!rawVector || rawVector.length === 0) {
+        setCameraState('failed');
+        setStatusMessage('Câmera coberta ou iluminação insuficiente.');
+        setErrorMessage('Não foi possível identificar traços faciais nítidos. Limpe a lente e posicione o rosto sob boa luz.');
+        return;
+      }
       const vector = compactVector(rawVector);
 
       // Save safely to storage

@@ -42,15 +42,24 @@ export async function extractFaceVector(source: string | HTMLVideoElement): Prom
       const imgData = ctx.getImageData(0, 0, size, size);
       const data = imgData.data;
 
-      // 0. Verify if camera is totally covered / pitch black / no optical variance
+      // 0. Verify if camera is totally covered / finger on lens / dark / no optical facial variance
       let rawLuminanceSum = 0;
+      let totalR = 0;
+      let totalG = 0;
+      let totalB = 0;
       for (let i = 0; i < data.length; i += 4) {
         const r = data[i];
         const g = data[i + 1];
         const b = data[i + 2];
+        totalR += r;
+        totalG += g;
+        totalB += b;
         rawLuminanceSum += 0.299 * r + 0.587 * g + 0.114 * b;
       }
       const rawAvgLuminance = rawLuminanceSum / (size * size);
+      const avgR = totalR / (size * size);
+      const avgG = totalG / (size * size);
+      const avgB = totalB / (size * size);
 
       let rawVarianceSum = 0;
       for (let i = 0; i < data.length; i += 4) {
@@ -59,9 +68,47 @@ export async function extractFaceVector(source: string | HTMLVideoElement): Prom
       }
       const rawStdDev = Math.sqrt(rawVarianceSum / (size * size));
 
-      // Se a câmera estiver coberta por dedo/bolso ou totalmente escura/sem contraste, rejeita
-      if (rawAvgLuminance < 8 || rawStdDev < 4) {
-        console.warn('Câmera coberta ou sem iluminação suficiente.');
+      // Calculate raw image edge gradients (Sobel filter on un-equalized raw grayscale)
+      // Real facial features (eyes, nose, lips) have high-frequency edge energy.
+      // Fingers over lens, tape, dark pockets, or covered lenses produce near-zero edge energy.
+      let rawEdgeEnergy = 0;
+      for (let y = 1; y < size - 1; y++) {
+        for (let x = 1; x < size - 1; x++) {
+          const idxTL = ((y - 1) * size + (x - 1)) * 4;
+          const idxTR = ((y - 1) * size + (x + 1)) * 4;
+          const idxBL = ((y + 1) * size + (x - 1)) * 4;
+          const idxBR = ((y + 1) * size + (x + 1)) * 4;
+          const idxML = (y * size + (x - 1)) * 4;
+          const idxMR = (y * size + (x + 1)) * 4;
+          const idxTM = ((y - 1) * size + x) * 4;
+          const idxBM = ((y + 1) * size + x) * 4;
+
+          const lTL = 0.299 * data[idxTL] + 0.587 * data[idxTL + 1] + 0.114 * data[idxTL + 2];
+          const lTR = 0.299 * data[idxTR] + 0.587 * data[idxTR + 1] + 0.114 * data[idxTR + 2];
+          const lBL = 0.299 * data[idxBL] + 0.587 * data[idxBL + 1] + 0.114 * data[idxBL + 2];
+          const lBR = 0.299 * data[idxBR] + 0.587 * data[idxBR + 1] + 0.114 * data[idxBR + 2];
+          const lML = 0.299 * data[idxML] + 0.587 * data[idxML + 1] + 0.114 * data[idxML + 2];
+          const lMR = 0.299 * data[idxMR] + 0.587 * data[idxMR + 1] + 0.114 * data[idxMR + 2];
+          const lTM = 0.299 * data[idxTM] + 0.587 * data[idxTM + 1] + 0.114 * data[idxTM + 2];
+          const lBM = 0.299 * data[idxBM] + 0.587 * data[idxBM + 1] + 0.114 * data[idxBM + 2];
+
+          const gx = (lTR + 2 * lMR + lBR) - (lTL + 2 * lML + lBL);
+          const gy = (lBL + 2 * lBM + lBR) - (lTL + 2 * lTM + lTR);
+          rawEdgeEnergy += Math.sqrt(gx * gx + gy * gy);
+        }
+      }
+      const avgEdgePerPixel = rawEdgeEnergy / ((size - 2) * (size - 2));
+
+      // Strict validation against covered camera, blurry finger, or pitch black darkness:
+      const isTooDark = rawAvgLuminance < 12;
+      const isTooFlat = rawStdDev < 7;
+      const isFingerCovered = avgR > (avgG * 1.5) && avgR > (avgB * 1.7) && avgEdgePerPixel < 16;
+      const isLackingFaceContours = avgEdgePerPixel < 6.5;
+
+      if (isTooDark || isTooFlat || isFingerCovered || isLackingFaceContours) {
+        console.warn('Detecção rejeitada: Câmera coberta, dedo na lente ou ausência de traços faciais nítidos.', {
+          rawAvgLuminance, rawStdDev, avgEdgePerPixel, avgR, avgG, avgB
+        });
         resolve([]);
         return;
       }

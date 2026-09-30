@@ -41,8 +41,14 @@ jobs:
         env:
           GOOGLE_MAPS_PLATFORM_KEY: ${{ secrets.GOOGLE_MAPS_PLATFORM_KEY }}
 
-      - name: Adicionar a plataforma Android
-        run: npx cap add android
+      - name: Adicionar a plataforma Android (se não existir)
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          else
+            echo "A pasta android já existe no repositório. Ignorando cap add e executando cap sync."
+            npx cap sync android
+          fi
 
       - name: Adicionar permissões de câmera e biometria
         run: |

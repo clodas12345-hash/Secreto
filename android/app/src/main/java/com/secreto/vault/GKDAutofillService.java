@@ -84,10 +84,12 @@ public class GKDAutofillService extends AutofillService {
         String credentialsJsonStr = sharedPref.getString("credentials_list", "[]");
 
         FillResponse.Builder responseBuilder = new FillResponse.Builder();
-        boolean hasMatches = false;
 
         try {
             JSONArray credentialsArray = new JSONArray(credentialsJsonStr);
+            ArrayList<JSONObject> matchingEntries = new ArrayList<>();
+            ArrayList<JSONObject> fallbackEntries = new ArrayList<>();
+
             for (int i = 0; i < credentialsArray.length(); i++) {
                 JSONObject entry = credentialsArray.getJSONObject(i);
                 
@@ -118,48 +120,72 @@ public class GKDAutofillService extends AutofillService {
                 }
 
                 if (matches) {
-                    hasMatches = true;
-                    Log.d(TAG, "Correspondência encontrada! Serviço: " + entry.optString("title") + " (" + usernameValue + ")");
-
-                    // Layout para exibir a sugestão na caixinha de Autofill do teclado do celular
-                    RemoteViews presentation = new RemoteViews(getPackageName(), R.layout.autofill_suggestion);
-                    presentation.setTextViewText(R.id.suggestion_title, entry.optString("title"));
-                    presentation.setTextViewText(R.id.suggestion_username, usernameValue);
-
-                    Dataset.Builder datasetBuilder = new Dataset.Builder();
-
-                    // Adicionar preenchimento para todos os campos de usuário encontrados
-                    for (AutofillId usernameId : usernameFields) {
-                        datasetBuilder.setValue(usernameId, AutofillValue.forText(usernameValue), presentation);
-                    }
-
-                    // Adicionar preenchimento para todos os campos de senha encontrados
-                    for (AutofillId passwordId : passwordFields) {
-                        datasetBuilder.setValue(passwordId, AutofillValue.forText(passwordValue), presentation);
-                    }
-
-                    responseBuilder.addDataset(datasetBuilder.build());
+                    matchingEntries.add(entry);
+                } else if (fallbackEntries.size() < 3) {
+                    // Guarda as primeiras credenciais como plano B (fallback)
+                    fallbackEntries.add(entry);
                 }
             }
+
+            List<JSONObject> finalEntries = matchingEntries;
+            if (finalEntries.isEmpty()) {
+                // Se não houver correspondência exata de domínio (ex: portal específico com URL corporativa),
+                // exibe as primeiras 3 credenciais do cofre para que o usuário possa escolher livremente.
+                finalEntries = fallbackEntries;
+                Log.d(TAG, "Nenhuma correspondência exata de domínio. Exibindo 3 credenciais de fallback.");
+            }
+
+            for (JSONObject entry : finalEntries) {
+                String usernameValue = entry.optString("username", "");
+                String passwordValue = entry.optString("password", "");
+                if (passwordValue.isEmpty()) {
+                    passwordValue = entry.optString("accessPassword", "");
+                }
+                if (passwordValue.isEmpty()) {
+                    passwordValue = entry.optString("transactionPassword", "");
+                }
+
+                Log.d(TAG, "Exibindo sugestão de preenchimento: " + entry.optString("title"));
+
+                // Layout para exibir a sugestão na caixinha de Autofill do teclado do celular
+                RemoteViews presentation = new RemoteViews(getPackageName(), R.layout.autofill_suggestion);
+                presentation.setTextViewText(R.id.suggestion_title, entry.optString("title"));
+                presentation.setTextViewText(R.id.suggestion_username, usernameValue);
+
+                Dataset.Builder datasetBuilder = new Dataset.Builder();
+
+                // Adicionar preenchimento para todos os campos de usuário encontrados
+                for (AutofillId usernameId : usernameFields) {
+                    datasetBuilder.setValue(usernameId, AutofillValue.forText(usernameValue), presentation);
+                }
+
+                // Adicionar preenchimento para todos os campos de senha encontrados
+                for (AutofillId passwordId : passwordFields) {
+                    datasetBuilder.setValue(passwordId, AutofillValue.forText(passwordValue), presentation);
+                }
+
+                responseBuilder.addDataset(datasetBuilder.build());
+            }
+
+            if (!finalEntries.isEmpty()) {
+                callback.onSuccess(responseBuilder.build());
+                return;
+            }
+
         } catch (Exception e) {
             Log.e(TAG, "Falha ao processar credenciais e preencher campos", e);
         }
 
-        if (hasMatches) {
-            callback.onSuccess(responseBuilder.build());
-        } else {
-            Log.d(TAG, "Nenhuma credencial correspondente foi encontrada no cofre.");
-            callback.onSuccess(null);
-        }
+        Log.d(TAG, "Nenhuma credencial correspondente ou fallback disponível.");
+        callback.onSuccess(null);
     }
 
     @Override
     public void onSaveRequest(SaveRequest request, SaveCallback callback) {
-        // Opcional: Salvar credenciais capturadas na tela de volta pro app (não obrigatório para preenchimento)
         callback.onSuccess();
     }
 
-    // Função recursiva para varrer a tela e descobrir os inputs de usuário e senha
+    // Função recursiva para varrer a tela e descobrir os inputs de usuário, CPF e senha
     private void findAutofillFields(ViewNode node, List<AutofillId> usernameFields, List<AutofillId> passwordFields, List<String> webDomains) {
         if (node == null) return;
 
@@ -202,14 +228,14 @@ public class GKDAutofillService extends AutofillService {
             resourceId = resourceId.toLowerCase();
             if (resourceId.contains("password") || resourceId.contains("senha")) {
                 isPasswordField = true;
-            } else if (resourceId.contains("username") || resourceId.contains("email") || resourceId.contains("login") || resourceId.contains("usuario")) {
+            } else if (resourceId.contains("username") || resourceId.contains("email") || resourceId.contains("login") || resourceId.contains("usuario") || resourceId.contains("cpf") || resourceId.contains("cnpj")) {
                 isUsernameField = true;
             }
         }
 
         if (hintText.contains("senha") || hintText.contains("password") || hintText.contains("pass")) {
             isPasswordField = true;
-        } else if (hintText.contains("usuario") || hintText.contains("username") || hintText.contains("email") || hintText.contains("login") || hintText.contains("cpf")) {
+        } else if (hintText.contains("usuario") || hintText.contains("username") || hintText.contains("email") || hintText.contains("login") || hintText.contains("cpf") || hintText.contains("cnpj") || hintText.contains("documento")) {
             isUsernameField = true;
         }
 
@@ -219,7 +245,7 @@ public class GKDAutofillService extends AutofillService {
             Log.d(TAG, "Identificado campo de Senha: " + node.getAutofillId() + " (Hint: " + hintText + ", ID: " + resourceId + ")");
         } else if (isUsernameField && node.getAutofillId() != null) {
             usernameFields.add(node.getAutofillId());
-            Log.d(TAG, "Identificado campo de Usuário/Login: " + node.getAutofillId() + " (Hint: " + hintText + ", ID: " + resourceId + ")");
+            Log.d(TAG, "Identificado campo de Usuário/Login/CPF: " + node.getAutofillId() + " (Hint: " + hintText + ", ID: " + resourceId + ")");
         }
 
         // Percorrer os nós filhos recursivamente

@@ -578,7 +578,7 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
   };
 
   return (
-    <div className="min-h-[100dvh] bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center p-4 sm:p-6 pt-[env(safe-area-inset-top,32px)] relative overflow-hidden select-none">
+    <div className="min-h-[100dvh] bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center p-4 sm:p-6 pt-[env(safe-area-inset-top,32px)] pb-[calc(env(safe-area-inset-bottom,20px)+16px)] relative overflow-hidden select-none">
       {/* Background ambient lighting */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-zinc-950/80 to-zinc-950 pointer-events-none" />
       <div className="absolute -top-40 -left-40 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />

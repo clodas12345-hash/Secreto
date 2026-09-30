@@ -87,6 +87,8 @@ export default function Vault({
   const [showPermissionsModal, setShowPermissionsModal] = useState(false);
   const [isDisguiseActive, setIsDisguiseActive] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [showMobileZipModal, setShowMobileZipModal] = useState(false);
+  const [copiedAppUrl, setCopiedAppUrl] = useState(false);
   const [iconDownloadSuccess, setIconDownloadSuccess] = useState(false);
   const [customIconSuccess, setCustomIconSuccess] = useState(false);
 
@@ -307,7 +309,14 @@ export default function Vault({
   };
 
   // Extension ZIP Packager & Downloader
-  const handleDownloadExtensionZip = async () => {
+  const handleDownloadExtensionZip = async (forceDownload = false) => {
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || Capacitor.isNativePlatform();
+    
+    if (isMobile && !forceDownload) {
+      setShowMobileZipModal(true);
+      return;
+    }
+
     setIsGeneratingZip(true);
     try {
       const zip = new JSZip();
@@ -493,6 +502,34 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
   const [passwords, setPasswords] = useState<PasswordEntry[]>([]);
   const [documents, setDocuments] = useState<DocumentEntry[]>([]);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
+
+  // Sincroniza as senhas com o preenchimento nativo do Android
+  useEffect(() => {
+    const syncNativeAutofill = async () => {
+      if (Capacitor.getPlatform() === 'android') {
+        try {
+          const simplified = passwords.map(p => ({
+            title: p.title || '',
+            username: p.username || '',
+            password: p.password || p.accessPassword || p.transactionPassword || '',
+            website: p.website || ''
+          }));
+
+          // Envia as credenciais descriptografadas pro SharedPreferences nativo
+          if ((Capacitor as any).Plugins && (Capacitor as any).Plugins.AndroidAutofill) {
+            await (Capacitor as any).Plugins.AndroidAutofill.setCredentials({
+              credentials: JSON.stringify(simplified)
+            });
+            console.log("🔒 GKD Secreto: Senhas sincronizadas com o preenchimento nativo do Android!");
+          }
+        } catch (e) {
+          console.error("Falha ao sincronizar senhas nativas", e);
+        }
+      }
+    };
+
+    syncNativeAutofill();
+  }, [passwords]);
   
   // Auto-lock feature
   
@@ -1249,7 +1286,7 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
   }
 
   return (
-    <div className="bg-zinc-950 text-zinc-400 font-sans tracking-tight h-[100dvh] w-full overflow-hidden flex flex-col select-none pt-[env(safe-area-inset-top,28px)]">
+    <div className="bg-zinc-950 text-zinc-400 font-sans tracking-tight h-[100dvh] w-full overflow-hidden flex flex-col select-none pt-[env(safe-area-inset-top,28px)] pb-[calc(env(safe-area-inset-bottom,20px)+16px)]">
       
       {/* Header */}
       <header className="h-16 border-b border-zinc-800/50 flex items-center justify-between px-2.5 sm:px-6 bg-zinc-950/80 backdrop-blur-xl shadow-2xl gap-2 min-w-0">
@@ -2600,14 +2637,6 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                   <h2 className="text-2xl font-light text-zinc-100 italic">Suas <span className="font-bold not-italic">Pastas</span></h2>
                   <div className="flex flex-wrap items-center gap-2">
-                    <button 
-                      onClick={() => setShowPermissionsModal(true)}
-                      className="px-3 py-2 bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/40 text-cyan-300 shadow-md rounded text-xs font-bold transition-all flex items-center gap-1.5"
-                      title="Solicitar permissões do sistema (Câmera, Localização, Armazenamento, Sobrepor, Segundo plano, Microfone, Contatos, Notificações)"
-                    >
-                      <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
-                      PERMISSÕES (8)
-                    </button>
                     <button 
                       onClick={() => handleOpenRandomPasswordGenerator(null)}
                       className="px-3.5 py-2 bg-zinc-900 hover:bg-zinc-800 border border-blue-500/30 text-blue-400 shadow-md rounded text-xs font-bold transition-all flex items-center gap-1.5"
@@ -4668,6 +4697,80 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
           setTimeout(() => setFaceTestMessage(''), 4000);
         }}
       />
+
+      {/* Modal: Aviso de Download de Extensão no Celular */}
+      {showMobileZipModal && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-blue-500/30 p-6 rounded-3xl max-w-md w-full space-y-4 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setShowMobileZipModal(false)}
+              className="absolute top-4 right-4 text-zinc-500 hover:text-zinc-200 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-12 h-12 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
+              <Laptop className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h3 className="text-zinc-100 font-extrabold text-base flex items-center gap-2">
+                <span>Instalar no seu Computador</span>
+              </h3>
+              <p className="text-zinc-400 text-xs mt-1.5 leading-relaxed">
+                Extensões de navegador (como no Google Chrome, Brave ou Edge) foram feitas para rodar em seu <strong>Computador ou Notebook (PC/Mac)</strong>. No celular, o Chrome padrão não aceita extensões.
+              </p>
+              <p className="text-zinc-400 text-xs mt-2 leading-relaxed">
+                Copie o link abaixo e acesse pelo navegador do seu computador para poder baixar o arquivo ZIP e instalá-lo com segurança!
+              </p>
+            </div>
+
+            <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 flex flex-col gap-2">
+              <span className="text-[10px] font-bold text-zinc-500 uppercase">Link de Acesso:</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={window.location.origin}
+                  className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-300 font-mono focus:outline-none select-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(window.location.origin);
+                    setCopiedAppUrl(true);
+                    setTimeout(() => setCopiedAppUrl(false), 2500);
+                  }}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold shrink-0 flex items-center gap-1 transition-colors"
+                >
+                  {copiedAppUrl ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedAppUrl ? 'Copiado!' : 'Copiar'}
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-zinc-800/85 flex flex-col sm:flex-row items-center gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMobileZipModal(false);
+                  handleDownloadExtensionZip(true);
+                }}
+                className="w-full sm:w-auto px-4 py-2 bg-zinc-800 hover:bg-zinc-700 hover:text-zinc-100 text-zinc-400 rounded-xl text-xs font-bold transition-all text-center"
+              >
+                Baixar no celular mesmo assim
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowMobileZipModal(false)}
+                className="w-full sm:w-auto px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-extrabold transition-all text-center shadow-md shadow-blue-600/10"
+              >
+                Entendi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="8dp"
+    android:background="@android:color/black"
+    android:gravity="center_vertical">
+
+    <!-- Ícone de Cofre / Cadeado Azul do GKD Secreto -->
+    <ImageView
+        android:id="@+id/suggestion_icon"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
+        android:layout_marginEnd="8dp"
+        android:src="@android:drawable/ic_secure"
+        android:tint="#3b82f6" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- Título do App / Site (ex: Netflix, Instagram) -->
+        <TextView
+            android:id="@+id/suggestion_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="GKD Secreto"
+            android:textColor="#ffffff"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <!-- Usuário / Login (ex: meu-email@gmail.com) -->
+        <TextView
+            android:id="@+id/suggestion_username"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="usuario@email.com"
+            android:textColor="#a1a1aa"
+            android:textSize="11sp" />
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -282,7 +282,13 @@ export default function Vault({
         }
       }
     } catch (err: any) {
-      if (err.name === 'NotAllowedError' || err.code === 16 || err.code === 15) {
+      const isIframeError = err.name === 'SecurityError' || 
+                            err.message?.includes('publickey-credentials') || 
+                            err.message?.includes('Permissions Policy') ||
+                            err.message?.includes('not enabled in this document');
+      if (isIframeError) {
+        setBioError('iframe_security_error');
+      } else if (err.name === 'NotAllowedError' || err.code === 16 || err.code === 15) {
         setBioError('O acesso à biometria foi cancelado ou negado.');
       } else {
         setBioError('Falha ao cadastrar biometria: ' + err.message);
@@ -1912,8 +1918,43 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
 
                   <div className="pt-4 border-t border-zinc-800/80">
                     {bioError && (
-                      <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded-lg text-xs">
-                        {bioError}
+                      <div className="mb-4 p-4 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-xl text-xs space-y-3">
+                        {bioError === 'iframe_security_error' ? (
+                          <>
+                            <p className="font-semibold text-amber-400 flex items-center gap-1.5">
+                              <AlertTriangle className="w-4 h-4 shrink-0" />
+                              Restrição de Segurança do Navegador (Iframe)
+                            </p>
+                            <p className="leading-relaxed">
+                              Você está visualizando o aplicativo dentro de um iframe no painel do AI Studio. Por motivos de segurança e privacidade, os navegadores modernos bloqueiam o acesso a sensores biométricos físicos e WebAuthn dentro de iframes de origens diferentes.
+                            </p>
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                              <a 
+                                href={window.location.href} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                Abrir em Nova Aba (Para testar biometria real)
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  localStorage.setItem('webauthn_cred_id', 'simulated_biometric_active');
+                                  setHasBiometry(true);
+                                  setBioError('');
+                                }}
+                                className="px-3 py-2 bg-amber-500 hover:bg-amber-400 text-black rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                              >
+                                <Fingerprint className="w-3.5 h-3.5" />
+                                Simular Biometria com Sucesso
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <span>{bioError}</span>
+                        )}
                       </div>
                     )}
                     

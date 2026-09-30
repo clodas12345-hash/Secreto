@@ -109,5 +109,5 @@ jobs:
       - name: Disponibilizar o APK pra download
         uses: actions/upload-artifact@v4
         with:
-          name: gkd-rastreador-apk
+          name: gkd-secreto-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk

@@ -29,42 +29,53 @@ public class GKDAutofillService extends AutofillService {
 
     @Override
     public void onFillRequest(FillRequest request, CancellationSignal cancellationSignal, FillCallback callback) {
-        Log.d(TAG, "onFillRequest disparado pelo sistema");
+        Log.d(TAG, "onFillRequest disparado");
 
-        // Obter os contextos de preenchimento
         List<FillContext> contexts = request.getFillContexts();
         if (contexts.isEmpty()) {
             callback.onSuccess(null);
             return;
         }
 
-        // Recuperar a estrutura de assistência (a árvore de elementos da tela)
         AssistStructure structure = contexts.get(contexts.size() - 1).getStructure();
-        
-        // Identificar o aplicativo atual ou site rodando
         String packageName = structure.getActivityComponent().getPackageName();
-        Log.d(TAG, "Identificando pacote ativo: " + packageName);
 
-        // Listas para armazenar os campos de login e senha encontrados na tela
-        List<AutofillId> usernameFields = new ArrayList<>();
+        // Listas para categorizar os tipos de campos identificados na tela do celular
+        List<AutofillId> cpfFields = new ArrayList<>();
+        List<AutofillId> nameFields = new ArrayList<>();
+        List<AutofillId> phoneFields = new ArrayList<>();
+        List<AutofillId> emailFields = new ArrayList<>();
         List<AutofillId> passwordFields = new ArrayList<>();
+        List<AutofillId> genericUsernameFields = new ArrayList<>();
         ArrayList<String> webDomains = new ArrayList<>();
 
-        // Percorrer a árvore de elementos da tela para identificar os campos e domínios
-        findAutofillFields(structure.getWindowNodeAt(0).getRootViewNode(), usernameFields, passwordFields, webDomains);
+        // Varre a tela atual para categorizar os campos
+        findAutofillFields(
+            structure.getWindowNodeAt(0).getRootViewNode(), 
+            cpfFields, 
+            nameFields, 
+            phoneFields, 
+            emailFields, 
+            passwordFields, 
+            genericUsernameFields, 
+            webDomains
+        );
 
-        if (usernameFields.isEmpty() && passwordFields.isEmpty()) {
-            Log.d(TAG, "Nenhum campo de login ou senha reconhecido nesta tela.");
+        boolean foundAnyField = !cpfFields.isEmpty() || !nameFields.isEmpty() || 
+                                !phoneFields.isEmpty() || !emailFields.isEmpty() || 
+                                !passwordFields.isEmpty() || !genericUsernameFields.isEmpty();
+
+        if (!foundAnyField) {
+            Log.d(TAG, "Nenhum campo compatível identificado nesta tela.");
             callback.onSuccess(null);
             return;
         }
 
-        // Descobrir qual o domínio ou termo de busca ideal
+        // Identificar domínio ou aplicativo ativo
         String targetDomain = "";
         if (!webDomains.isEmpty()) {
             targetDomain = webDomains.get(0);
         } else {
-            // Se for um aplicativo nativo, usa o nome do pacote (ex: com.instagram.android -> instagram)
             String[] parts = packageName.split("\\.");
             for (String part : parts) {
                 if (!part.equals("com") && !part.equals("android") && !part.equals("app") && !part.equals("mobile")) {
@@ -77,40 +88,144 @@ public class GKDAutofillService extends AutofillService {
             }
         }
 
-        Log.d(TAG, "Buscando correspondência de credenciais para: " + targetDomain);
-
-        // Ler as credenciais sincronizadas do cofre em SharedPreferences
+        // Recuperar credenciais e dados pessoais armazenados
         SharedPreferences sharedPref = getSharedPreferences("GKDSecretoAutofill", Context.MODE_PRIVATE);
         String credentialsJsonStr = sharedPref.getString("credentials_list", "[]");
 
         FillResponse.Builder responseBuilder = new FillResponse.Builder();
+        boolean addedAnyDataset = false;
 
         try {
             JSONArray credentialsArray = new JSONArray(credentialsJsonStr);
+
+            // 1. PREENCHIMENTO DE CPF / CNPJ (Dados Pessoais)
+            if (!cpfFields.isEmpty()) {
+                for (int i = 0; i < credentialsArray.length(); i++) {
+                    JSONObject entry = credentialsArray.getJSONObject(i);
+                    String entryTitle = entry.optString("title", "").toLowerCase();
+                    String usernameValue = entry.optString("username", "");
+
+                    if (usernameValue.isEmpty()) continue;
+
+                    // Se for um registro explicitamente rotulado como CPF, CNPJ, Documento ou Perfil
+                    boolean isCPFEntry = entryTitle.contains("cpf") || entryTitle.contains("cnpj") || 
+                                         entryTitle.contains("documento") || entryTitle.contains("pessoal") || 
+                                         entryTitle.contains("perfil") || entryTitle.contains("identidade");
+
+                    if (isCPFEntry) {
+                        RemoteViews presentation = new RemoteViews(getPackageName(), R.layout.autofill_suggestion);
+                        presentation.setTextViewText(R.id.suggestion_title, entry.optString("title"));
+                        presentation.setTextViewText(R.id.suggestion_username, usernameValue);
+
+                        Dataset.Builder datasetBuilder = new Dataset.Builder();
+                        for (AutofillId id : cpfFields) {
+                            datasetBuilder.setValue(id, AutofillValue.forText(usernameValue), presentation);
+                        }
+                        responseBuilder.addDataset(datasetBuilder.build());
+                        addedAnyDataset = true;
+                    }
+                }
+            }
+
+            // 2. PREENCHIMENTO DE NOME COMPLETO (Dados Pessoais)
+            if (!nameFields.isEmpty()) {
+                for (int i = 0; i < credentialsArray.length(); i++) {
+                    JSONObject entry = credentialsArray.getJSONObject(i);
+                    String entryTitle = entry.optString("title", "").toLowerCase();
+                    String usernameValue = entry.optString("username", "");
+
+                    if (usernameValue.isEmpty()) continue;
+
+                    boolean isNameEntry = entryTitle.contains("nome") || entryTitle.contains("name") || 
+                                          entryTitle.contains("pessoal") || entryTitle.contains("perfil") || 
+                                          entryTitle.contains("completo") || entryTitle.contains("identidade");
+
+                    if (isNameEntry) {
+                        RemoteViews presentation = new RemoteViews(getPackageName(), R.layout.autofill_suggestion);
+                        presentation.setTextViewText(R.id.suggestion_title, entry.optString("title"));
+                        presentation.setTextViewText(R.id.suggestion_username, usernameValue);
+
+                        Dataset.Builder datasetBuilder = new Dataset.Builder();
+                        for (AutofillId id : nameFields) {
+                            datasetBuilder.setValue(id, AutofillValue.forText(usernameValue), presentation);
+                        }
+                        responseBuilder.addDataset(datasetBuilder.build());
+                        addedAnyDataset = true;
+                    }
+                }
+            }
+
+            // 3. PREENCHIMENTO DE TELEFONE / CELULAR (Dados Pessoais)
+            if (!phoneFields.isEmpty()) {
+                for (int i = 0; i < credentialsArray.length(); i++) {
+                    JSONObject entry = credentialsArray.getJSONObject(i);
+                    String entryTitle = entry.optString("title", "").toLowerCase();
+                    String usernameValue = entry.optString("username", "");
+
+                    if (usernameValue.isEmpty()) continue;
+
+                    boolean isPhoneEntry = entryTitle.contains("tel") || entryTitle.contains("phone") || 
+                                           entryTitle.contains("celular") || entryTitle.contains("fone") || 
+                                           entryTitle.contains("telefone") || entryTitle.contains("mobile");
+
+                    if (isPhoneEntry) {
+                        RemoteViews presentation = new RemoteViews(getPackageName(), R.layout.autofill_suggestion);
+                        presentation.setTextViewText(R.id.suggestion_title, entry.optString("title"));
+                        presentation.setTextViewText(R.id.suggestion_username, usernameValue);
+
+                        Dataset.Builder datasetBuilder = new Dataset.Builder();
+                        for (AutofillId id : phoneFields) {
+                            datasetBuilder.setValue(id, AutofillValue.forText(usernameValue), presentation);
+                        }
+                        responseBuilder.addDataset(datasetBuilder.build());
+                        addedAnyDataset = true;
+                    }
+                }
+            }
+
+            // 4. PREENCHIMENTO DE EMAIL (Dados Pessoais)
+            if (!emailFields.isEmpty()) {
+                for (int i = 0; i < credentialsArray.length(); i++) {
+                    JSONObject entry = credentialsArray.getJSONObject(i);
+                    String entryTitle = entry.optString("title", "").toLowerCase();
+                    String usernameValue = entry.optString("username", "");
+
+                    if (usernameValue.isEmpty()) continue;
+
+                    boolean isEmailEntry = entryTitle.contains("email") || entryTitle.contains("mail") || 
+                                           entryTitle.contains("pessoal") || entryTitle.contains("perfil");
+
+                    if (isEmailEntry) {
+                        RemoteViews presentation = new RemoteViews(getPackageName(), R.layout.autofill_suggestion);
+                        presentation.setTextViewText(R.id.suggestion_title, entry.optString("title"));
+                        presentation.setTextViewText(R.id.suggestion_username, usernameValue);
+
+                        Dataset.Builder datasetBuilder = new Dataset.Builder();
+                        for (AutofillId id : emailFields) {
+                            datasetBuilder.setValue(id, AutofillValue.forText(usernameValue), presentation);
+                        }
+                        responseBuilder.addDataset(datasetBuilder.build());
+                        addedAnyDataset = true;
+                    }
+                }
+            }
+
+            // 5. PREENCHIMENTO DE LOGIN PADRÃO (Usuário/Senha vinculados a sites)
             ArrayList<JSONObject> matchingEntries = new ArrayList<>();
             ArrayList<JSONObject> fallbackEntries = new ArrayList<>();
 
             for (int i = 0; i < credentialsArray.length(); i++) {
                 JSONObject entry = credentialsArray.getJSONObject(i);
-                
                 String entryTitle = entry.optString("title", "").toLowerCase();
                 String entryWebsite = entry.optString("website", "").toLowerCase();
                 String usernameValue = entry.optString("username", "");
                 String passwordValue = entry.optString("password", "");
 
-                // Se o campo de senha principal estiver vazio, tenta pegar de PIN/Acesso ou Transação
-                if (passwordValue.isEmpty()) {
-                    passwordValue = entry.optString("accessPassword", "");
-                }
-                if (passwordValue.isEmpty()) {
-                    passwordValue = entry.optString("transactionPassword", "");
-                }
+                if (passwordValue.isEmpty()) passwordValue = entry.optString("accessPassword", "");
+                if (passwordValue.isEmpty()) passwordValue = entry.optString("transactionPassword", "");
 
-                if (usernameValue.isEmpty() || passwordValue.isEmpty()) {
-                    continue; // Pula entradas incompletas
-                }
+                if (usernameValue.isEmpty() || passwordValue.isEmpty()) continue;
 
-                // Critério de correspondência inteligente (domínio de site ou termo de título do app)
                 boolean matches = false;
                 if (!targetDomain.isEmpty()) {
                     matches = entryWebsite.contains(targetDomain) || 
@@ -122,61 +237,56 @@ public class GKDAutofillService extends AutofillService {
                 if (matches) {
                     matchingEntries.add(entry);
                 } else if (fallbackEntries.size() < 3) {
-                    // Guarda as primeiras credenciais como plano B (fallback)
                     fallbackEntries.add(entry);
                 }
             }
 
-            List<JSONObject> finalEntries = matchingEntries;
-            if (finalEntries.isEmpty()) {
-                // Se não houver correspondência exata de domínio (ex: portal específico com URL corporativa),
-                // exibe as primeiras 3 credenciais do cofre para que o usuário possa escolher livremente.
-                finalEntries = fallbackEntries;
-                Log.d(TAG, "Nenhuma correspondência exata de domínio. Exibindo 3 credenciais de fallback.");
+            List<JSONObject> loginEntriesToUse = matchingEntries;
+            if (loginEntriesToUse.isEmpty() && !addedAnyDataset) {
+                // Caso não tenhamos preenchido nenhum dado pessoal e não achamos site exato, usa o plano B
+                loginEntriesToUse = fallbackEntries;
+                Log.d(TAG, "Exibindo credenciais de plano B (fallback).");
             }
 
-            for (JSONObject entry : finalEntries) {
+            for (JSONObject entry : loginEntriesToUse) {
                 String usernameValue = entry.optString("username", "");
                 String passwordValue = entry.optString("password", "");
-                if (passwordValue.isEmpty()) {
-                    passwordValue = entry.optString("accessPassword", "");
-                }
-                if (passwordValue.isEmpty()) {
-                    passwordValue = entry.optString("transactionPassword", "");
-                }
+                if (passwordValue.isEmpty()) passwordValue = entry.optString("accessPassword", "");
+                if (passwordValue.isEmpty()) passwordValue = entry.optString("transactionPassword", "");
 
-                Log.d(TAG, "Exibindo sugestão de preenchimento: " + entry.optString("title"));
-
-                // Layout para exibir a sugestão na caixinha de Autofill do teclado do celular
                 RemoteViews presentation = new RemoteViews(getPackageName(), R.layout.autofill_suggestion);
                 presentation.setTextViewText(R.id.suggestion_title, entry.optString("title"));
                 presentation.setTextViewText(R.id.suggestion_username, usernameValue);
 
                 Dataset.Builder datasetBuilder = new Dataset.Builder();
 
-                // Adicionar preenchimento para todos os campos de usuário encontrados
-                for (AutofillId usernameId : usernameFields) {
-                    datasetBuilder.setValue(usernameId, AutofillValue.forText(usernameValue), presentation);
+                // Preencher campos de usuário/login normais identificados na tela
+                for (AutofillId id : genericUsernameFields) {
+                    datasetBuilder.setValue(id, AutofillValue.forText(usernameValue), presentation);
                 }
-
-                // Adicionar preenchimento para todos os campos de senha encontrados
-                for (AutofillId passwordId : passwordFields) {
-                    datasetBuilder.setValue(passwordId, AutofillValue.forText(passwordValue), presentation);
+                // Preencher campos de email também se for o único campo de usuário disponível
+                for (AutofillId id : emailFields) {
+                    datasetBuilder.setValue(id, AutofillValue.forText(usernameValue), presentation);
+                }
+                // Preencher campo de senha
+                for (AutofillId id : passwordFields) {
+                    datasetBuilder.setValue(id, AutofillValue.forText(passwordValue), presentation);
                 }
 
                 responseBuilder.addDataset(datasetBuilder.build());
+                addedAnyDataset = true;
             }
 
-            if (!finalEntries.isEmpty()) {
+            if (addedAnyDataset) {
                 callback.onSuccess(responseBuilder.build());
                 return;
             }
 
         } catch (Exception e) {
-            Log.e(TAG, "Falha ao processar credenciais e preencher campos", e);
+            Log.e(TAG, "Falha ao analisar credenciais", e);
         }
 
-        Log.d(TAG, "Nenhuma credencial correspondente ou fallback disponível.");
+        Log.d(TAG, "Nenhuma sugestão enviada.");
         callback.onSuccess(null);
     }
 
@@ -185,73 +295,70 @@ public class GKDAutofillService extends AutofillService {
         callback.onSuccess();
     }
 
-    // Função recursiva para varrer a tela e descobrir os inputs de usuário, CPF e senha
-    private void findAutofillFields(ViewNode node, List<AutofillId> usernameFields, List<AutofillId> passwordFields, List<String> webDomains) {
+    private void findAutofillFields(
+        ViewNode node, 
+        List<AutofillId> cpfFields,
+        List<AutofillId> nameFields,
+        List<AutofillId> phoneFields,
+        List<AutofillId> emailFields,
+        List<AutofillId> passwordFields,
+        List<AutofillId> genericUsernameFields,
+        List<String> webDomains
+    ) {
         if (node == null) return;
 
-        // Tentar capturar domínios de sites abertos no Chrome/WebView
         if (node.getWebDomain() != null) {
             webDomains.add(node.getWebDomain());
-            Log.d(TAG, "Domínio web detectado no nó: " + node.getWebDomain());
         }
 
         int inputType = node.getInputType();
         String[] hints = node.getAutofillHints();
-        String resourceId = node.getIdEntry();
-        String nodeText = node.getText() != null ? node.getText().toString().toLowerCase() : "";
+        String resourceId = node.getIdEntry() != null ? node.getIdEntry().toLowerCase() : "";
         String hintText = node.getHint() != null ? node.getHint().toLowerCase() : "";
+        AutofillId autofillId = node.getAutofillId();
 
-        boolean isPasswordField = false;
-        boolean isUsernameField = false;
+        if (autofillId == null) {
+            int childCount = node.getChildCount();
+            for (int i = 0; i < childCount; i++) {
+                findAutofillFields(node.getChildAt(i), cpfFields, nameFields, phoneFields, emailFields, passwordFields, genericUsernameFields, webDomains);
+            }
+            return;
+        }
 
-        // 1. Verificar dicas nativas de Autofill (Hints)
+        boolean isPassword = false;
         if (hints != null) {
             for (String hint : hints) {
                 if (hint.equalsIgnoreCase(View.AUTOFILL_HINT_PASSWORD)) {
-                    isPasswordField = true;
-                } else if (hint.equalsIgnoreCase(View.AUTOFILL_HINT_USERNAME) || 
-                           hint.equalsIgnoreCase(View.AUTOFILL_HINT_EMAIL_ADDRESS)) {
-                    isUsernameField = true;
+                    isPassword = true;
                 }
             }
         }
-
-        // 2. Verificar o tipo de entrada (HTML/Native input type)
-        if (!isPasswordField) {
-            isPasswordField = (inputType & View.AUTOFILL_TYPE_TEXT) != 0 && 
-                              ((inputType & android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD) != 0 || 
-                               (inputType & android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD) != 0);
+        if (!isPassword) {
+            isPassword = (inputType & View.AUTOFILL_TYPE_TEXT) != 0 && 
+                         ((inputType & android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD) != 0 || 
+                          (inputType & android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD) != 0);
+        }
+        if (!isPassword && (resourceId.contains("password") || resourceId.contains("senha") || hintText.contains("senha") || hintText.contains("password") || hintText.contains("pass"))) {
+            isPassword = true;
         }
 
-        // 3. Verificar ID de recurso e textos auxiliares
-        if (resourceId != null) {
-            resourceId = resourceId.toLowerCase();
-            if (resourceId.contains("password") || resourceId.contains("senha")) {
-                isPasswordField = true;
-            } else if (resourceId.contains("username") || resourceId.contains("email") || resourceId.contains("login") || resourceId.contains("usuario") || resourceId.contains("cpf") || resourceId.contains("cnpj")) {
-                isUsernameField = true;
-            }
+        if (isPassword) {
+            passwordFields.add(autofillId);
+        } else if (resourceId.contains("cpf") || resourceId.contains("cnpj") || hintText.contains("cpf") || hintText.contains("cnpj") || hintText.contains("documento") || hintText.contains("doc")) {
+            cpfFields.add(autofillId);
+        } else if (resourceId.contains("phone") || resourceId.contains("tel") || resourceId.contains("celular") || resourceId.contains("fone") || resourceId.contains("telefone") || resourceId.contains("mobile") || hintText.contains("phone") || hintText.contains("tel") || hintText.contains("celular") || hintText.contains("fone") || hintText.contains("telefone") || hintText.contains("mobile")) {
+            phoneFields.add(autofillId);
+        } else if (resourceId.contains("email") || resourceId.contains("mail") || hintText.contains("email") || hintText.contains("mail") || hintText.contains("correio")) {
+            emailFields.add(autofillId);
+        } else if (resourceId.contains("nome") || resourceId.contains("name") || resourceId.contains("completo") || resourceId.contains("fullname") || hintText.contains("nome") || hintText.contains("name") || hintText.contains("completo") || hintText.contains("fullname")) {
+            nameFields.add(autofillId);
+        } else if (resourceId.contains("username") || resourceId.contains("login") || resourceId.contains("usuario") || hintText.contains("username") || hintText.contains("login") || hintText.contains("usuario")) {
+            genericUsernameFields.add(autofillId);
         }
 
-        if (hintText.contains("senha") || hintText.contains("password") || hintText.contains("pass")) {
-            isPasswordField = true;
-        } else if (hintText.contains("usuario") || hintText.contains("username") || hintText.contains("email") || hintText.contains("login") || hintText.contains("cpf") || hintText.contains("cnpj") || hintText.contains("documento")) {
-            isUsernameField = true;
-        }
-
-        // Salvar os campos correspondentes
-        if (isPasswordField && node.getAutofillId() != null) {
-            passwordFields.add(node.getAutofillId());
-            Log.d(TAG, "Identificado campo de Senha: " + node.getAutofillId() + " (Hint: " + hintText + ", ID: " + resourceId + ")");
-        } else if (isUsernameField && node.getAutofillId() != null) {
-            usernameFields.add(node.getAutofillId());
-            Log.d(TAG, "Identificado campo de Usuário/Login/CPF: " + node.getAutofillId() + " (Hint: " + hintText + ", ID: " + resourceId + ")");
-        }
-
-        // Percorrer os nós filhos recursivamente
         int childCount = node.getChildCount();
         for (int i = 0; i < childCount; i++) {
-            findAutofillFields(node.getChildAt(i), usernameFields, passwordFields, webDomains);
+            findAutofillFields(node.getChildAt(i), cpfFields, nameFields, phoneFields, emailFields, passwordFields, genericUsernameFields, webDomains);
         }
     }
 }

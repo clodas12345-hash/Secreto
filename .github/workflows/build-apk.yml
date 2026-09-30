@@ -87,19 +87,22 @@ jobs:
     - name: Force signingConfig to Use Fixed Keystore
       run: |
         if [ -f ~/.android/debug.keystore ]; then
-          if grep -q "android.signingConfigs.debug.storeFile" android/app/build.gradle; then
-            echo "signingConfig already configured in build.gradle"
-          else
-            cat >> android/app/build.gradle << 'EOF'
-
-            android.signingConfigs.debug.storeFile = new File(System.getProperty("user.home") + "/.android/debug.keystore")
-            android.signingConfigs.debug.storePassword = "android"
-            android.signingConfigs.debug.keyAlias = "androiddebugkey"
-            android.signingConfigs.debug.keyPassword = "android"
-            android.buildTypes.debug.signingConfig = android.signingConfigs.debug
-            EOF
-            echo "signingConfig forced to use ~/.android/debug.keystore successfully."
-          fi
+          node -e '
+            const fs = require("fs");
+            const file = "android/app/build.gradle";
+            if (fs.existsSync(file)) {
+              let content = fs.readFileSync(file, "utf8");
+              if (!content.includes("android.signingConfigs.debug.storeFile")) {
+                const gradleConfig = "\nandroid.signingConfigs.debug.storeFile = new File(System.getProperty(\"user.home\") + \"/.android/debug.keystore\")\nandroid.signingConfigs.debug.storePassword = \"android\"\nandroid.signingConfigs.debug.keyAlias = \"androiddebugkey\"\nandroid.signingConfigs.debug.keyPassword = \"android\"\nandroid.buildTypes.debug.signingConfig = android.signingConfigs.debug\n";
+                fs.appendFileSync(file, gradleConfig, "utf8");
+                console.log("signingConfig forced to use ~/.android/debug.keystore successfully.");
+              } else {
+                console.log("signingConfig already configured in build.gradle");
+              }
+            } else {
+              console.error("build.gradle not found!");
+            }
+          '
         else
           echo "Fixed keystore not present, using default gradle debug signature."
         fi

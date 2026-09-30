@@ -31,6 +31,16 @@ jobs:
         distribution: 'temurin'
         java-version: '21'
 
+    - name: Set up Debug Keystore for Automated Updates
+      run: |
+        mkdir -p ~/.android
+        if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
+          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -d > ~/.android/debug.keystore
+          echo "Keystore successfully decoded from base64."
+        else
+          echo "Warning: secrets.DEBUG_KEYSTORE_BASE64 is empty. Compilation will fallback to standard gradle debug key."
+        fi
+
     - name: Add Android platform
       run: |
         npx cap add android
@@ -52,6 +62,7 @@ jobs:
               "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" android:maxSdkVersion=\"32\" />",
               "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\" android:maxSdkVersion=\"32\" />",
               "<uses-permission android:name=\"android.permission.READ_MEDIA_IMAGES\" />",
+              "<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />",
               "<uses-feature android:name=\"android.hardware.camera\" android:required=\"false\" />",
               "<uses-feature android:name=\"android.hardware.camera.front\" android:required=\"false\" />",
               "<uses-feature android:name=\"android.hardware.camera.autofocus\" android:required=\"false\" />"
@@ -72,6 +83,26 @@ jobs:
 
     - name: Sincronizar Capacitor novamente
       run: npx cap sync android
+
+    - name: Force signingConfig to Use Fixed Keystore
+      run: |
+        if [ -f ~/.android/debug.keystore ]; then
+          if grep -q "android.signingConfigs.debug.storeFile" android/app/build.gradle; then
+            echo "signingConfig already configured in build.gradle"
+          else
+            cat >> android/app/build.gradle << 'EOF'
+
+            android.signingConfigs.debug.storeFile = new File(System.getProperty("user.home") + "/.android/debug.keystore")
+            android.signingConfigs.debug.storePassword = "android"
+            android.signingConfigs.debug.keyAlias = "androiddebugkey"
+            android.signingConfigs.debug.keyPassword = "android"
+            android.buildTypes.debug.signingConfig = android.signingConfigs.debug
+            EOF
+            echo "signingConfig forced to use ~/.android/debug.keystore successfully."
+          fi
+        else
+          echo "Fixed keystore not present, using default gradle debug signature."
+        fi
 
     - name: Build Android Debug APK
       run: |

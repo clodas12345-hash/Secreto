@@ -2,119 +2,106 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main, master ]
-  workflow_dispatch:
+    branches: [ main ]
+  workflow_dispatch: {}
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Baixar o código
+        uses: actions/checkout@v4
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '22'
-        cache: 'npm'
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-    - name: Install dependencies
-      run: npm install
-
-    - name: Build web app
-      run: npm run build
-
-    - name: Set up Java JDK
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '21'
-
-    - name: Set up Debug Keystore for Automated Updates
-      run: |
-        mkdir -p ~/.android
-        if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
+      - name: Usar a mesma assinatura de teste em todas as compilações
+        run: |
+          mkdir -p ~/.android
           echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -d > ~/.android/debug.keystore
-          echo "Keystore successfully decoded from base64."
-        else
-          echo "Warning: secrets.DEBUG_KEYSTORE_BASE64 is empty. Compilation will fallback to standard gradle debug key."
-        fi
+          echo "Tamanho do arquivo decodificado:"
+          ls -la ~/.android/debug.keystore
 
-    - name: Add Android platform
-      run: |
-        npx cap add android
-        npx cap sync
+      - name: Instalar Java (necessário pro Android)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
 
-    - name: Inject Android Permissions
-      run: |
-        node -e '
-          const fs = require("fs");
-          const file = "android/app/src/main/AndroidManifest.xml";
-          if (fs.existsSync(file)) {
-            let content = fs.readFileSync(file, "utf8");
-            const permissions = [
-              "<uses-permission android:name=\"android.permission.INTERNET\" />",
-              "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\" />",
-              "<uses-permission android:name=\"android.permission.CAMERA\" />",
-              "<uses-permission android:name=\"android.permission.USE_BIOMETRIC\" />",
-              "<uses-permission android:name=\"android.permission.USE_FINGERPRINT\" />",
-              "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\" android:maxSdkVersion=\"32\" />",
-              "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\" android:maxSdkVersion=\"32\" />",
-              "<uses-permission android:name=\"android.permission.READ_MEDIA_IMAGES\" />",
-              "<uses-permission android:name=\"android.permission.POST_NOTIFICATIONS\" />",
-              "<uses-feature android:name=\"android.hardware.camera\" android:required=\"false\" />",
-              "<uses-feature android:name=\"android.hardware.camera.front\" android:required=\"false\" />",
-              "<uses-feature android:name=\"android.hardware.camera.autofocus\" android:required=\"false\" />"
-            ].join("\n    ");
-            if (!content.includes("android.permission.CAMERA")) {
-              content = content.replace("<application", permissions + "\n\n    <application");
-              fs.writeFileSync(file, content, "utf8");
-              console.log("Permissions successfully injected into AndroidManifest.xml");
-            }
+      - name: Instalar dependências do projeto
+        run: npm install
+
+      - name: Instalar o Capacitor
+        run: npm install @capacitor/core @capacitor/cli @capacitor/android
+
+      - name: Gerar a versão web do app
+        run: npm run build
+        env:
+          GOOGLE_MAPS_PLATFORM_KEY: ${{ secrets.GOOGLE_MAPS_PLATFORM_KEY }}
+
+      - name: Adicionar a plataforma Android
+        run: npx cap add android
+
+      - name: Adicionar permissões de câmera e biometria
+        run: |
+          sed -i '/<application/i\    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.USE_BIOMETRIC" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />' android/app/src/main/AndroidManifest.xml
+
+      - name: Organizar o ícone na pasta correta
+        run: mkdir -p assets && [ -f icon.png ] && mv icon.png assets/icon.png || true
+
+      - name: Gerar o ícone do app em todos os tamanhos
+        run: npx @capacitor/assets generate --android --iconBackgroundColor '#ffffff' --iconBackgroundColorDark '#ffffff'
+
+      - name: Sincronizar o app com o Android
+        run: npx cap sync android
+
+      - name: Corrigir conflito de versões do Kotlin
+        run: |
+          cat >> android/app/build.gradle << 'EOF'
+
+          configurations.all {
+              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
           }
-        '
+          EOF
 
-    - name: Instalar @capacitor/assets
-      run: npm install @capacitor/assets --save-dev
+      - name: Forçar signingConfig do App para Usar o Keystore Fixo
+        run: |
+          if grep -q "android.signingConfigs.debug.storeFile" android/app/build.gradle; then
+            echo "signingConfig já estava forçado — nada a fazer"
+            exit 0
+          fi
+          cat >> android/app/build.gradle << 'EOF'
 
-    - name: Gerar ícones e splash screen
-      run: npx capacitor-assets generate --android
+          android.signingConfigs.debug.storeFile = new File(System.getProperty("user.home") + "/.android/debug.keystore")
+          android.signingConfigs.debug.storePassword = "android"
+          android.signingConfigs.debug.keyAlias = "androiddebugkey"
+          android.signingConfigs.debug.keyPassword = "android"
+          android.buildTypes.debug.signingConfig = android.signingConfigs.debug
+          EOF
+          echo "signingConfig do buildType debug forçado a usar ~/.android/debug.keystore"
 
-    - name: Sincronizar Capacitor novamente
-      run: npx cap sync android
+      - name: Compilar o APK
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleDebug
 
-    - name: Force signingConfig to Use Fixed Keystore
-      run: |
-        if [ -f ~/.android/debug.keystore ]; then
-          node -e '
-            const fs = require("fs");
-            const file = "android/app/build.gradle";
-            if (fs.existsSync(file)) {
-              let content = fs.readFileSync(file, "utf8");
-              if (!content.includes("android.signingConfigs.debug.storeFile")) {
-                const gradleConfig = "\nandroid.signingConfigs.debug.storeFile = new File(System.getProperty(\"user.home\") + \"/.android/debug.keystore\")\nandroid.signingConfigs.debug.storePassword = \"android\"\nandroid.signingConfigs.debug.keyAlias = \"androiddebugkey\"\nandroid.signingConfigs.debug.keyPassword = \"android\"\nandroid.buildTypes.debug.signingConfig = android.signingConfigs.debug\n";
-                fs.appendFileSync(file, gradleConfig, "utf8");
-                console.log("signingConfig forced to use ~/.android/debug.keystore successfully.");
-              } else {
-                console.log("signingConfig already configured in build.gradle");
-              }
-            } else {
-              console.error("build.gradle not found!");
-            }
-          '
-        else
-          echo "Fixed keystore not present, using default gradle debug signature."
-        fi
+      - name: Verificar Fingerprint da Assinatura do APK
+        continue-on-error: true
+        run: |
+          SDK=${ANDROID_HOME:-/usr/local/lib/android/sdk}
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          APKSIGNER=$(ls $SDK/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          echo "=== Fingerprint da assinatura deste APK (compare entre builds) ==="
+          if [ -z "$APKSIGNER" ]; then
+            echo "apksigner nao encontrado - pulando verificacao"
+            exit 0
+          fi
+          "$APKSIGNER" verify --print-certs "$APK" | grep -i "SHA-256\|SHA-1"
 
-    - name: Build Android Debug APK
-      run: |
-        cd android
-        chmod +x gradlew
-        ./gradlew assembleDebug
-
-    - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: app-debug
-        path: android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Disponibilizar o APK pra download
+        uses: actions/upload-artifact@v4
+        with:
+          name: gkd-rastreador-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk

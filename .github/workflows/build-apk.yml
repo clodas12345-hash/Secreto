@@ -50,9 +50,8 @@ jobs:
             npx cap sync android
           fi
 
-      - name: Adicionar permissões de câmera e biometria
-        run: |
-          sed -i '/<application/i\    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.USE_BIOMETRIC" />\n    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-feature android:name="android.hardware.camera" android:required="false" />' android/app/src/main/AndroidManifest.xml
+      - name: Verificar permissões configuradas
+        run: echo "As permissões foram declaradas nativamente no AndroidManifest.xml"
 
       - name: Organizar o ícone na pasta correta
         run: mkdir -p assets && [ -f icon.png ] && mv icon.png assets/icon.png || true

@@ -166,6 +166,21 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
     };
   }, [isFirstSetup, hasBiometry]);
 
+  // Intercepta botão voltar na tela de bloqueio para fechar modais se abertos
+  useEffect(() => {
+    const handleBackButton = (e: Event) => {
+      if (showBigIconLightbox || showForgotModal || showResetConfirmModal || showFaceScanModal) {
+        e.preventDefault();
+        setShowBigIconLightbox(false);
+        setShowForgotModal(false);
+        setShowResetConfirmModal(false);
+        setShowFaceScanModal(false);
+      }
+    };
+    window.addEventListener('app:backbutton', handleBackButton);
+    return () => window.removeEventListener('app:backbutton', handleBackButton);
+  }, [showBigIconLightbox, showForgotModal, showResetConfirmModal, showFaceScanModal]);
+
   // Captura instantânea e silenciosa de múltiplos frames para alta precisão facial
   const captureStealthSnapshotAndVector = async (): Promise<{ photo: string | null; allSamples: { photo: string; vector: number[] }[] }> => {
     try {

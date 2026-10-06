@@ -59,6 +59,9 @@ jobs:
       - name: Gerar o ícone do app em todos os tamanhos
         run: npx @capacitor/assets generate --android --iconBackgroundColor '#ffffff' --iconBackgroundColorDark '#ffffff'
 
+      - name: Aplicar ícones personalizados com Sharp
+        run: npm run apply-icons
+
       - name: Sincronizar o app com o Android
         run: npx cap sync android
 

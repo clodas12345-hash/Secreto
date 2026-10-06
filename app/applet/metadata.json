@@ -1,6 +1,0 @@
-{
-  "name": "Rastreador GPS",
-  "description": "Aplicativo de rastreamento de localização por GPS em tempo real com Leaflet.js",
-  "requestFramePermissions": ["geolocation"],
-  "majorCapabilities": []
-}

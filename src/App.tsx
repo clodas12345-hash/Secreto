@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { App as CapApp } from '@capacitor/app';
 import { auth, db } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
@@ -22,6 +23,59 @@ export default function App() {
   });
 
   const lastActivityRef = useRef<number>(Date.now());
+  const isDuressModeRef = useRef(isDuressMode);
+
+  useEffect(() => {
+    isDuressModeRef.current = isDuressMode;
+  }, [isDuressMode]);
+
+  // Intercepta o botão voltar nativo do Android para nunca fechar o app
+  useEffect(() => {
+    let isCleanedUp = false;
+    let listenerHandle: { remove: () => Promise<void> } | null = null;
+
+    const setupBackButton = async () => {
+      try {
+        const handle = await CapApp.addListener('backButton', () => {
+          // 1. Se estiver no modo camuflado de coação (Game), volta para a tela inicial (LockScreen)
+          if (isDuressModeRef.current) {
+            setIsDuressMode(false);
+            setIsLocked(true);
+            return;
+          }
+
+          // 2. Notifica componentes filhos (Vault / LockScreen) para voltar para a tela inicial
+          // (fechar modais, sair de pastas ou retornar de abas secundárias para a aba inicial 'passwords')
+          const backEvent = new CustomEvent('app:backbutton', { cancelable: true });
+          const wasHandled = !window.dispatchEvent(backEvent);
+
+          if (wasHandled) {
+            return;
+          }
+
+          // 3. Se já estiver na tela inicial (aba 'passwords' do cofre ou tela de bloqueio inicial),
+          // não faz nada. O botão voltar NUNCA fecha o aplicativo!
+        });
+
+        if (isCleanedUp) {
+          handle.remove();
+        } else {
+          listenerHandle = handle;
+        }
+      } catch (err) {
+        console.warn('Capacitor backButton listener not supported or unavailable on web:', err);
+      }
+    };
+
+    setupBackButton();
+
+    return () => {
+      isCleanedUp = true;
+      if (listenerHandle) {
+        listenerHandle.remove();
+      }
+    };
+  }, []);
 
   // Listen to Firebase Auth state
   useEffect(() => {

@@ -531,8 +531,6 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
     syncNativeAutofill();
   }, [passwords]);
   
-  // Auto-lock feature
-  
 
   useEffect(() => {
     const loadData = async () => {
@@ -714,6 +712,89 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
   const [randomSaveTargetFolderId, setRandomSaveTargetFolderId] = useState<string | null>(null);
   const [randomSaveSlot, setRandomSaveSlot] = useState<'password' | 'alphanumericPassword' | 'accessPassword' | 'transactionPassword'>('password');
   const [randomSaveSuccess, setRandomSaveSuccess] = useState(false);
+
+  // Responde ao botão voltar do celular Android
+  useEffect(() => {
+    const handleBackButton = (e: Event) => {
+      // 1. Fecha modais abertos
+      if (
+        showAppInfoModal ||
+        showBigIconLightbox ||
+        showPermissionsModal ||
+        showMobileZipModal ||
+        isFaceEnrollOpen ||
+        isFaceVerifyTestOpen ||
+        changePinModal ||
+        clearHistoryModal ||
+        isAdding ||
+        isAddingFolder ||
+        showRandomPasswordModal ||
+        isBatchCameraOpen ||
+        isLiveCameraOpen ||
+        editingFolder !== null ||
+        unlockingFolder !== null ||
+        selectedPhoto !== null
+      ) {
+        e.preventDefault();
+        setShowAppInfoModal(false);
+        setShowBigIconLightbox(false);
+        setShowPermissionsModal(false);
+        setShowMobileZipModal(false);
+        setIsFaceEnrollOpen(false);
+        setIsFaceVerifyTestOpen(false);
+        setChangePinModal(false);
+        setClearHistoryModal(false);
+        setIsAdding(false);
+        setIsAddingFolder(false);
+        setShowRandomPasswordModal(false);
+        setIsBatchCameraOpen(false);
+        setIsLiveCameraOpen(false);
+        setEditingFolder(null);
+        setUnlockingFolder(null);
+        setSelectedPhoto(null);
+        return;
+      }
+
+      // 2. Se estiver visualizando o conteúdo de uma pasta, volta para a lista principal
+      if (activeFolderId !== null) {
+        e.preventDefault();
+        setActiveFolderId(null);
+        return;
+      }
+
+      // 3. Se estiver em qualquer aba secundária (Documentos, Configurações, Ajuda, Segurança), volta para a inicial ('passwords')
+      if (activeTab !== 'passwords') {
+        e.preventDefault();
+        setActiveTab('passwords');
+        return;
+      }
+
+      // 4. Se já estiver na tela inicial (aba 'passwords' sem pasta ou modal aberto), não faz nada!
+      // O app nunca fecha.
+    };
+
+    window.addEventListener('app:backbutton', handleBackButton);
+    return () => window.removeEventListener('app:backbutton', handleBackButton);
+  }, [
+    showAppInfoModal,
+    showBigIconLightbox,
+    showPermissionsModal,
+    showMobileZipModal,
+    isFaceEnrollOpen,
+    isFaceVerifyTestOpen,
+    changePinModal,
+    clearHistoryModal,
+    isAdding,
+    isAddingFolder,
+    showRandomPasswordModal,
+    isBatchCameraOpen,
+    isLiveCameraOpen,
+    editingFolder,
+    unlockingFolder,
+    selectedPhoto,
+    activeFolderId,
+    activeTab
+  ]);
 
   const generateRandomPasswordString = (
     type: 'alphanumeric' | 'numeric',

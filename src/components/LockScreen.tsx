@@ -610,10 +610,10 @@ export default function LockScreen({ onUnlock, onDuressUnlock }: LockScreenProps
           <div className="flex flex-col items-center text-center mb-6">
             <div 
               onClick={() => setShowBigIconLightbox(true)}
-              className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden border-2 border-blue-500/50 shadow-xl shadow-blue-500/25 bg-slate-950 mb-3 cursor-pointer group relative hover:scale-105 hover:border-cyan-400 transition-all duration-300"
+              className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden border-2 border-blue-500/50 shadow-xl shadow-blue-500/25 bg-white mb-3 cursor-pointer group relative hover:scale-105 hover:border-cyan-400 transition-all duration-300 flex items-center justify-center"
               title="Toque para ver o logotipo oficial"
             >
-              <img src="/app-icon.png" alt="GKD Mobility" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              <img src="/app-icon.png" alt="GKD Mobility" className="w-[90%] h-[90%] object-contain" referrerPolicy="no-referrer" />
               <div className="absolute inset-0 bg-blue-950/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                 <Maximize2 className="w-6 h-6 text-cyan-300 drop-shadow" />
               </div>

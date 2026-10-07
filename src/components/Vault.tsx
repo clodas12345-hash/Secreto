@@ -1379,8 +1379,8 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
           className="flex items-center gap-3 cursor-pointer group select-none hover:opacity-95 transition-all shrink min-w-0"
           title="Clique para ver Disciplina e Diretrizes do Cofre"
         >
-          <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-blue-500/30 shadow-md shadow-blue-500/10 bg-slate-950 flex items-center justify-center">
-            <img src="/app-icon.png" alt="GKD Secreto" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+          <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-blue-500/30 shadow-md shadow-blue-500/10 bg-white flex items-center justify-center">
+            <img src="/app-icon.png" alt="GKD Secreto" className="w-[90%] h-[90%] object-contain" referrerPolicy="no-referrer" />
           </div>
           <div className="flex flex-col">
             <div className="flex items-center gap-1.5">
@@ -4006,8 +4006,8 @@ COMO USAR NO CELULAR ANDROID (Via Kiwi Browser ou Yandex):
             {/* Cabeçalho do Modal */}
             <div className="flex flex-col sm:flex-row items-center sm:items-start justify-between gap-4 border-b border-zinc-800 pb-5 bg-gradient-to-b from-blue-950/30 via-transparent to-transparent -mx-5 -mt-5 p-5 rounded-t-3xl border-t border-t-blue-500/20">
               <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left w-full sm:w-auto">
-                <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 rounded-2xl overflow-hidden border-2 border-blue-500/50 shadow-lg shadow-blue-500/25 bg-slate-950 mx-auto sm:mx-0">
-                  <img src="/app-icon.png" alt="GKD Secreto" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 rounded-2xl overflow-hidden border-2 border-blue-500/50 shadow-lg shadow-blue-500/25 bg-white mx-auto sm:mx-0 flex items-center justify-center">
+                  <img src="/app-icon.png" alt="GKD Secreto" className="w-[90%] h-[90%] object-contain" referrerPolicy="no-referrer" />
                 </div>
                 <div>
                   <div className="flex items-center justify-center sm:justify-start gap-2 mb-1">

@@ -33,7 +33,7 @@ function findSourceIcon() {
 }
 
 async function renderSafeZoneIcon(sourcePath, canvasSize, outputPath) {
-  const maxLogoSize = Math.round(canvasSize * 0.6);
+  const maxLogoSize = Math.round(canvasSize * 0.9);
 
   const resizedLogoBuffer = await sharp(sourcePath)
     .resize(maxLogoSize, maxLogoSize, {
@@ -82,7 +82,7 @@ async function applyAndroidIcons() {
     console.log(`Gerados icones em ${mipmap.name} (foreground: ${mipmap.adaptiveSize}px, launcher/round: ${mipmap.legacySize}px)`);
   }
 
-  console.log('Todos os icones Android foram aplicados com margem de zona segura (60%).');
+  console.log('Todos os icones Android foram aplicados com margem de zona segura (90%).');
 }
 
 applyAndroidIcons().catch((err) => {
